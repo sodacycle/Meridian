@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>app.meridian.Meridian</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Meridian</name>
+  <summary>Plan astrophotography sessions and inspect FITS file metadata</summary>
+
+  <developer id="app.meridian">
+    <name>Meridian Contributors</name>
+  </developer>
+
+  <description>
+    <p>
+      A desktop application for astrophotographers that combines session planning
+      with FITS file management. Plan your imaging nights with the built-in sky
+      planner, then scan and review your sessions after the fact.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Observation planner with NGC/IC/Messier catalog (Seestar-optimised filters)</li>
+      <li>Altitude and visibility calculations for your location and chosen night</li>
+      <li>Recursive directory scanning for .fit and .fits files</li>
+      <li>FITS header metadata extraction — no Python required</li>
+      <li>Target grouping with total integration time aggregation</li>
+      <li>Calibration frame summaries grouped by type and settings</li>
+      <li>Imaging calendar with moon phase and historical weather data</li>
+      <li>Catalog breakdown by Messier, NGC, IC, Sharpless, and more</li>
+      <li>Image viewer with live stretch controls and rejection workflow</li>
+      <li>File organiser tools for Siril preparation and cleanup</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">meridian.desktop</launchable>
+
+  <url type="homepage">https://github.com/sodacycle/FITS-Metadata-Viewer</url>
+
+  <provides>
+    <binary>Meridian</binary>
+  </provides>
+
+  <categories>
+    <category>Science</category>
+    <category>Astronomy</category>
+  </categories>
+
+  <keywords>
+    <keyword>FITS</keyword>
+    <keyword>astronomy</keyword>
+    <keyword>astrophotography</keyword>
+    <keyword>metadata</keyword>
+    <keyword>telescope</keyword>
+    <keyword>planner</keyword>
+    <keyword>Seestar</keyword>
+  </keywords>
+
+  <releases>
+    <release version="1.0.0" date="2026-06-05">
+      <description>
+        <p>Initial release.</p>
+      </description>
+    </release>
+  </releases>
+
+  <content_rating type="oars-1.1"/>
+</component>

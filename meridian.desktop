@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Meridian
+GenericName=Astrophotography Planner and Metadata Viewer
+Comment=Plan imaging sessions and inspect FITS file metadata
+Exec=Meridian
+Icon=meridian
+Categories=Science;Astronomy;
+Keywords=FITS;astronomy;astrophotography;metadata;planner;telescope;
+StartupNotify=true
