@@ -163,6 +163,35 @@ void TargetSummaryModel::setEntries(const QVariantList &entries)
     endResetModel();
 }
 
+// Normalize a target name for fuzzy matching: uppercase, collapse spaces,
+// remove common annotation suffixes so "M 31" == "M31", "NGC 7000" == "NGC7000".
+static QString normalizeTargetName(const QString &name)
+{
+    QString n = name.toUpper().simplified();
+    n.remove(QLatin1Char(' '));
+    return n;
+}
+
+double TargetSummaryModel::integrationSecondsForTarget(const QString &targetName) const
+{
+    const QString key = normalizeTargetName(targetName);
+    for (const auto &e : m_entries) {
+        if (normalizeTargetName(e.value("Target").toString()) == key)
+            return e.value("Total Integration Time s").toDouble();
+    }
+    return 0.0;
+}
+
+int TargetSummaryModel::sessionCountForTarget(const QString &targetName) const
+{
+    const QString key = normalizeTargetName(targetName);
+    for (const auto &e : m_entries) {
+        if (normalizeTargetName(e.value("Target").toString()) == key)
+            return e.value("FITS Count").toInt();
+    }
+    return 0;
+}
+
 // ---- CalibrationSummaryModel ----
 // - Exposes calibration frame statistics grouped by type and settings -
 

@@ -21,6 +21,15 @@ Dialog {
             width: parent.width
             spacing: 12
 
+            Image {
+                source: "qrc:/qt/qml/Meridian/resources/meridian.svg"
+                width: 56; height: 56
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                mipmap: true
+                anchors.verticalCenter: parent.verticalCenter
+            }
+
             Column {
                 spacing: 4
                 anchors.verticalCenter: parent.verticalCenter

@@ -2,8 +2,6 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QDirIterator>
-#include <QLibrary>
-#include <QOperatingSystemVersion>
 
 #include "fitsscanner.h"
 #include "fileorganizer.h"
@@ -12,86 +10,13 @@
 #include "metadatamodel.h"
 #include "catalogservice.h"
 #include "plannerservice.h"
+#include "schedulerservice.h"
+#include "locationservice.h"
+#include "lightpollutionservice.h"
 #include "wikiservice.h"
-
-// ── Platform theme and display server detection (Linux/macOS only) ────────────
-// On Windows Qt automatically uses the native Windows style and the Windows
-// file dialog — no environment variables need to be set. These functions are
-// compiled out entirely on Windows to avoid touching Linux-specific paths.
-#if !defined(Q_OS_WIN)
-
-static void detectPlatformTheme()
-{
-    if (qEnvironmentVariableIsSet("QT_QPA_PLATFORMTHEME"))
-        return;
-
-    const QByteArray desktop = qgetenv("XDG_CURRENT_DESKTOP").toLower();
-    const QByteArray session = qgetenv("DESKTOP_SESSION").toLower();
-
-    const bool isKde      = desktop.contains("kde")      || session.contains("plasma");
-    const bool isGtk      = desktop.contains("gnome")    || desktop.contains("unity")
-                         || desktop.contains("cinnamon") || desktop.contains("mate")
-                         || desktop.contains("xfce");
-
-    if (isKde) {
-        const QStringList kdePaths = {
-            QStringLiteral("/usr/lib/qt6/plugins/platformthemes/libqkde6.so"),
-            QStringLiteral("/usr/lib/qt6/plugins/platformthemes/libqkde.so"),
-            QStringLiteral("/usr/lib/x86_64-linux-gnu/qt6/plugins/platformthemes/libqkde.so"),
-        };
-        for (const QString &p : kdePaths) {
-            if (QLibrary::isLibrary(p)) {
-                qputenv("QT_QPA_PLATFORMTHEME",
-                        p.contains("libqkde6") ? "kde6" : "kde");
-                return;
-            }
-        }
-    } else if (isGtk) {
-        const QStringList gtkPaths = {
-            QStringLiteral("/usr/lib/qt6/plugins/platformthemes/libqgtk3.so"),
-            QStringLiteral("/usr/lib/x86_64-linux-gnu/qt6/plugins/platformthemes/libqgtk3.so"),
-            QStringLiteral("/usr/lib64/qt6/plugins/platformthemes/libqgtk3.so"),
-        };
-        for (const QString &p : gtkPaths) {
-            if (QLibrary::isLibrary(p)) {
-                qputenv("QT_QPA_PLATFORMTHEME", "gtk3");
-                return;
-            }
-        }
-    }
-}
-
-static void detectWayland()
-{
-    if (qEnvironmentVariableIsSet("QT_QPA_PLATFORM"))
-        return;
-
-    if (qgetenv("WAYLAND_DISPLAY").isEmpty())
-        return;
-
-    const QStringList waylandPaths = {
-        QStringLiteral("/usr/lib/qt6/plugins/platforms/libqwayland-generic.so"),
-        QStringLiteral("/usr/lib/x86_64-linux-gnu/qt6/plugins/platforms/libqwayland-generic.so"),
-        QStringLiteral("/usr/lib64/qt6/plugins/platforms/libqwayland-generic.so"),
-    };
-    for (const QString &p : waylandPaths) {
-        if (QLibrary::isLibrary(p)) {
-            qputenv("QT_QPA_PLATFORM", "wayland");
-            return;
-        }
-    }
-}
-
-#endif // !Q_OS_WIN
 
 int main(int argc, char *argv[])
 {
-#if !defined(Q_OS_WIN)
-    // Must be called before QApplication reads these variables at construction
-    detectPlatformTheme();
-    detectWayland();
-#endif
-
     QApplication app(argc, argv);
     app.setApplicationName("Meridian");
     app.setApplicationVersion("1.0.0");
@@ -116,7 +41,21 @@ int main(int argc, char *argv[])
     CatalogModel            catalogModel;
     CatalogService          catalogService;
     PlannerService          plannerService(&catalogService);
+    SchedulerService        schedulerService;
+    LocationService         locationService;
+    LightPollutionService   lightPollutionService;
     WikiService             wikiService;
+
+    // OS location feeds directly into weather/planner location.
+    QObject::connect(&locationService, &LocationService::locationObtained,
+                     &weatherService,  &WeatherService::setLocation);
+
+    // Light pollution lookup triggered by location.
+    QObject::connect(&locationService, &LocationService::locationObtained,
+                     &lightPollutionService, &LightPollutionService::fetch);
+
+    // Request current position immediately — runs async, result arrives via signal.
+    locationService.requestLocation();
 
     QQmlApplicationEngine engine;
 
@@ -134,6 +73,9 @@ int main(int argc, char *argv[])
     ctx->setContextProperty("catalogModel",            &catalogModel);
     ctx->setContextProperty("catalogService",          &catalogService);
     ctx->setContextProperty("plannerService",          &plannerService);
+    ctx->setContextProperty("schedulerService",        &schedulerService);
+    ctx->setContextProperty("locationService",         &locationService);
+    ctx->setContextProperty("lightPollutionService",   &lightPollutionService);
     ctx->setContextProperty("wikiService",             &wikiService);
 
     // ── Populate models when a scan completes ─────────────────────────────────
@@ -155,17 +97,19 @@ int main(int argc, char *argv[])
             catalogModel.buildFromTargets(targets);
 
             QString minDate, maxDate;
-            bool locationSet = false;
 
             for (const QVariant &v : meta) {
                 const QVariantMap map = v.toMap();
 
-                if (!locationSet) {
+                // Only use FITS coordinates if OS location hasn't been obtained.
+                // The user's current position (from OS) takes priority over where
+                // they last observed.
+                if (!locationService.located()) {
                     const double lat = map.value("Latitude").toString().toDouble();
                     const double lon = map.value("Longitude").toString().toDouble();
                     if (lat != 0.0 && lon != 0.0) {
                         weatherService.setLocation(lat, lon);
-                        locationSet = true;
+                        break;   // one location is enough; stop scanning FITS for it
                     }
                 }
 

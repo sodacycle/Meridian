@@ -16,7 +16,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Quick QuickControls2 Network Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Quick QuickControls2 Network Concurrent Positioning)
 
 # Qt's QML module machinery creates a staging directory named after the target
 # in CMAKE_BINARY_DIR.  Without this, the linker output path collides with that
@@ -35,7 +35,10 @@ qt_add_executable(Meridian WIN32
     src/metadatamodel.h     src/metadatamodel.cpp
     src/catalogservice.h    src/catalogservice.cpp
     src/plannerservice.h    src/plannerservice.cpp
-    src/wikiservice.h       src/wikiservice.cpp
+    src/schedulerservice.h  src/schedulerservice.cpp
+    src/locationservice.h         src/locationservice.cpp
+    src/lightpollutionservice.h   src/lightpollutionservice.cpp
+    src/wikiservice.h             src/wikiservice.cpp
 )
 
 qt_add_qml_module(Meridian
@@ -57,6 +60,7 @@ qt_add_qml_module(Meridian
         qml/components/ProgressIndicator.qml
     RESOURCES
         src/ngc-ic-messier-catalog.json
+        resources/meridian.svg
 )
 
 target_link_libraries(Meridian PRIVATE
@@ -66,6 +70,7 @@ target_link_libraries(Meridian PRIVATE
     Qt6::QuickControls2
     Qt6::Network
     Qt6::Concurrent
+    Qt6::Positioning
 )
 
 install(TARGETS Meridian

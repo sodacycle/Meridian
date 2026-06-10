@@ -7,9 +7,6 @@
 #include <QJsonParseError>
 #include <QVariantMap>
 
-static constexpr double MAG_LIMIT  = 12.5;
-static constexpr double SIZE_LIMIT = 2.0; // arcminutes
-
 // Object type whitelist (object_definition field values from the OpenNGC catalog)
 static const QStringList ALLOWED_TYPES = {
     QStringLiteral("Galaxy"),
@@ -58,7 +55,7 @@ CatalogService::CatalogService(QObject *parent) : QObject(parent)
         return;
 
     const QJsonArray arr = doc.array();
-    m_entries.reserve(256);
+    m_entries.reserve(8192);
 
     for (const QJsonValue &val : arr) {
         const QVariantMap map = val.toObject().toVariantMap();
@@ -121,8 +118,5 @@ double CatalogService::parseDecDeg(const QString &dec)
 bool CatalogService::passesSeestarFilter(const QVariantMap &obj)
 {
     const QString def = obj.value("object_definition").toString();
-    if (!ALLOWED_TYPES.contains(def)) return false;
-    if (parseMag(obj) > MAG_LIMIT) return false;
-    if (obj.value("majax").toDouble() < SIZE_LIMIT) return false;
-    return true;
+    return ALLOWED_TYPES.contains(def);
 }

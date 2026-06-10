@@ -54,7 +54,9 @@ public:
     QHash<int, QByteArray> roleNames() const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 
-    Q_INVOKABLE void setEntries(const QVariantList &entries);
+    Q_INVOKABLE void   setEntries(const QVariantList &entries);
+    Q_INVOKABLE double integrationSecondsForTarget(const QString &targetName) const;
+    Q_INVOKABLE int    sessionCountForTarget(const QString &targetName) const;
 
 private:
     QList<QVariantMap> m_entries;

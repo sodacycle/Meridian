@@ -54,7 +54,8 @@ QVariantMap TargetSummaryEntry::toVariantMap() const
         {"Target", target},
         {"FITS Count", fitsCount},
         {"Files With Exposure", filesWithExposure},
-        {"Total Integration Time", FitsScanner::formatHMS(totalIntegrationTimeS)}
+        {"Total Integration Time",   FitsScanner::formatHMS(totalIntegrationTimeS)},
+        {"Total Integration Time s", totalIntegrationTimeS}
     };
 }
 

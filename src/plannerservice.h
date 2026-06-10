@@ -23,6 +23,8 @@ struct PlannerEntry {
     Q_PROPERTY(double  peakAlt       MEMBER peakAlt)
     Q_PROPERTY(double  windowH       MEMBER windowH)
     Q_PROPERTY(bool    circumpolar   MEMBER circumpolar)
+    Q_PROPERTY(double  riseUtcH      MEMBER riseUtcH)
+    Q_PROPERTY(double  setUtcH       MEMBER setUtcH)
 public:
     QString name;
     QString commonName;
@@ -36,6 +38,8 @@ public:
     double  peakAlt      = 0.0;
     double  windowH      = 0.0;
     bool    circumpolar  = false;
+    double  riseUtcH     = 0.0;
+    double  setUtcH      = 0.0;
 };
 Q_DECLARE_METATYPE(PlannerEntry)
 
@@ -58,7 +62,9 @@ public:
         AltAtMidnightRole,
         PeakAltRole,
         WindowHRole,
-        CircumpolarRole
+        CircumpolarRole,
+        RiseUtcHRole,
+        SetUtcHRole
     };
 
     explicit VisibleObjectsModel(QObject *parent = nullptr);
@@ -69,9 +75,17 @@ public:
 
     void setEntries(const QList<PlannerEntry> &entries);
     Q_INVOKABLE PlannerEntry entryAt(int index) const;
+    Q_INVOKABLE void sortBy(const QString &column, bool ascending);
+    Q_INVOKABLE void setFilter(const QString &text);
 
 private:
-    QList<PlannerEntry> m_entries;
+    void rebuild();
+
+    QList<PlannerEntry> m_entries;     // displayed (filtered + sorted)
+    QList<PlannerEntry> m_allEntries;  // full set from last compute
+    QString m_filter;
+    QString m_sortCol;
+    bool    m_sortAsc = false;
 };
 
 // ── PlannerService ────────────────────────────────────────────────────────────

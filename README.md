@@ -272,11 +272,12 @@ Meridian/
 │   ├── CatalogBreakdown.qml
 │   └── components/         Reusable QML sub-components
 ├── appstream/              AppStream metadata
+├── resources/              Icons and configuration
+│   ├── meridian.desktop
+│   └── meridian.svg
 ├── CMakeLists.txt
 ├── CMakePresets.json
-├── build-appimage.sh
-├── meridian.desktop
-└── meridian.svg
+└── build-appimage.sh
 ```
 
 ---

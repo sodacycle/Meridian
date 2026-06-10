@@ -79,16 +79,16 @@ void WeatherService::fetchWeatherForDateRange(const QString &startDate, const QS
         });
     }
 
-    // Forecast call to cover today and any near-future dates in the range
+    // Forecast call: no start_date — adding it causes forecast_days to be ignored
+    // and only 1 day to be returned. The endpoint defaults to starting from today.
     QUrl forecastUrl("https://api.open-meteo.com/v1/forecast");
     QUrlQuery forecastQuery;
-    forecastQuery.addQueryItem("latitude",     QString::number(m_latitude));
-    forecastQuery.addQueryItem("longitude",    QString::number(m_longitude));
-    forecastQuery.addQueryItem("hourly",       "cloud_cover,relative_humidity_2m,temperature_2m");
-    forecastQuery.addQueryItem("daily",        "weather_code");
-    forecastQuery.addQueryItem("start_date",   today.toString("yyyy-MM-dd"));
-    forecastQuery.addQueryItem("timezone",     "auto");
-    forecastQuery.addQueryItem("forecast_days","16");
+    forecastQuery.addQueryItem("latitude",      QString::number(m_latitude));
+    forecastQuery.addQueryItem("longitude",     QString::number(m_longitude));
+    forecastQuery.addQueryItem("hourly",        "cloud_cover,relative_humidity_2m,temperature_2m");
+    forecastQuery.addQueryItem("daily",         "weather_code");
+    forecastQuery.addQueryItem("timezone",      "auto");
+    forecastQuery.addQueryItem("forecast_days", "16");
     forecastUrl.setQuery(forecastQuery);
 
     QNetworkReply *forecastReply = m_network->get(QNetworkRequest(forecastUrl));
@@ -138,15 +138,14 @@ void WeatherService::fetchWeather(int year, int month)
         });
     }
 
-    // Forecast weather
+    // Forecast weather — no start_date, see fetchWeatherForDateRange for explanation
     QUrl forecastUrl("https://api.open-meteo.com/v1/forecast");
     QUrlQuery forecastQuery;
-    forecastQuery.addQueryItem("latitude", QString::number(m_latitude));
-    forecastQuery.addQueryItem("longitude", QString::number(m_longitude));
-    forecastQuery.addQueryItem("hourly", "cloud_cover,relative_humidity_2m,temperature_2m");
-    forecastQuery.addQueryItem("daily", "weather_code");
-    forecastQuery.addQueryItem("start_date", today.toString("yyyy-MM-dd"));
-    forecastQuery.addQueryItem("timezone", "auto");
+    forecastQuery.addQueryItem("latitude",      QString::number(m_latitude));
+    forecastQuery.addQueryItem("longitude",     QString::number(m_longitude));
+    forecastQuery.addQueryItem("hourly",        "cloud_cover,relative_humidity_2m,temperature_2m");
+    forecastQuery.addQueryItem("daily",         "weather_code");
+    forecastQuery.addQueryItem("timezone",      "auto");
     forecastQuery.addQueryItem("forecast_days", "16");
     forecastUrl.setQuery(forecastQuery);
 
