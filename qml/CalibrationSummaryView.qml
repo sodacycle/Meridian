@@ -72,8 +72,13 @@ Rectangle {
                 required property var    count
                 required property string mostRecent
 
+                readonly property bool isCurrent: ListView.isCurrentItem
+
                 width: ListView.view.width; height: 36
-                color: index % 2 === 0 ? window.sysPal.alternateBase : "transparent"
+                color: isCurrent
+                       ? Qt.rgba(window.sysPal.highlight.r, window.sysPal.highlight.g,
+                                 window.sysPal.highlight.b, 0.25)
+                       : (index % 2 === 0 ? window.sysPal.alternateBase : "transparent")
 
                 Row {
                     anchors.fill: parent
@@ -140,6 +145,14 @@ Rectangle {
                             text: mostRecent; color: window.sysPal.windowText; font.pixelSize: 13
                             verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
                         }
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        calList.currentIndex = index
+                        calList.forceActiveFocus()
                     }
                 }
             }

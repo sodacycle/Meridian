@@ -8,16 +8,41 @@ Rectangle {
     border.width: 1
     radius: 6
 
-    property int rowCount: 0
+    property int    rowCount: 0
     property var    allRows: []
     property var    displayRows: []
     property bool   _keepDisplay: false
+    property string sortCol: ""
+    property bool   sortAsc: true
 
     property string selectedFilePath: ""
     property string selectedFileName: ""
 
     signal showAllRequested()
     signal fileOpenRequested(string path, string name)
+
+    function applyCurrentSort() {
+        if (!sortCol) return
+        var col = sortCol
+        var asc = sortAsc
+        var rows = displayRows.slice()
+        rows.sort(function(a, b) {
+            var va = (a[col] !== undefined && a[col] !== null) ? a[col] : ""
+            var vb = (b[col] !== undefined && b[col] !== null) ? b[col] : ""
+            var na = parseFloat(va), nb = parseFloat(vb)
+            var less
+            if (!isNaN(na) && !isNaN(nb)) less = na < nb
+            else less = String(va).localeCompare(String(vb)) < 0
+            return asc ? (less ? -1 : 1) : (less ? 1 : -1)
+        })
+        displayRows = rows
+    }
+
+    function headerClicked(col) {
+        if (sortCol === col) sortAsc = !sortAsc
+        else { sortCol = col; sortAsc = true }
+        applyCurrentSort()
+    }
 
     property var allColumns: [
         "Frame Type","File","Target","Start Time UTC","End Time UTC",
@@ -35,6 +60,7 @@ Rectangle {
             showAllBtn.visible = false
             selectedFilePath = ""
             selectedFileName  = ""
+            applyCurrentSort()
         }
     }
 
@@ -77,7 +103,7 @@ Rectangle {
                 !t.startsWith("ABELL")&&!t.startsWith("PGC")&&!t.startsWith("UGC")
             if (m) filtered.push(row)
         }
-        displayRows = filtered; showAllBtn.visible = true
+        displayRows = filtered; showAllBtn.visible = true; applyCurrentSort()
     }
 
     function filterByTarget(target) {
@@ -86,7 +112,7 @@ Rectangle {
         for (var i = 0; i < allRows.length; i++) {
             if (allRows[i]["Target"] === target) filtered.push(allRows[i])
         }
-        displayRows = filtered; showAllBtn.visible = true
+        displayRows = filtered; showAllBtn.visible = true; applyCurrentSort()
     }
 
     function filterByTargetAndDate(target, date) {
@@ -97,10 +123,10 @@ Rectangle {
             var rowDate = (row["Start Time UTC"]||"").toString().substring(0,10)
             if (row["Target"]===target && rowDate===date) filtered.push(row)
         }
-        displayRows = filtered; showAllBtn.visible = true
+        displayRows = filtered; showAllBtn.visible = true; applyCurrentSort()
     }
 
-    function showAll() { displayRows = allRows; showAllBtn.visible = false; showAllRequested() }
+    function showAll() { displayRows = allRows; showAllBtn.visible = false; applyCurrentSort(); showAllRequested() }
 
     Column {
         anchors.fill: parent; anchors.margins: 16; spacing: 10
@@ -147,13 +173,38 @@ Rectangle {
                     Repeater {
                         model: root.allColumns
                         Rectangle {
+                            required property string modelData
+                            required property int    index
                             width: root.colW[index]; height: 32
-                            color: window.sysPal.alternateBase
-                            Text {
-                                anchors.fill: parent; anchors.leftMargin: 6
-                                text: modelData; color: window.sysPal.windowText
-                                font.pixelSize: 11; font.bold: true
-                                verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
+                            color: root.sortCol === modelData
+                                   ? Qt.rgba(window.sysPal.highlight.r, window.sysPal.highlight.g,
+                                             window.sysPal.highlight.b, 0.22)
+                                   : window.sysPal.alternateBase
+                            Row {
+                                anchors { fill: parent; leftMargin: 6 }
+                                spacing: 3
+                                Text {
+                                    text: modelData
+                                    color: root.sortCol === modelData
+                                           ? window.sysPal.highlight : window.sysPal.windowText
+                                    font.pixelSize: 11; font.bold: true
+                                    verticalAlignment: Text.AlignVCenter
+                                    height: parent.height
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    text: root.sortAsc ? "▲" : "▼"
+                                    color: window.sysPal.highlight
+                                    font.pixelSize: 9
+                                    verticalAlignment: Text.AlignVCenter
+                                    height: parent.height
+                                    visible: root.sortCol === modelData
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: root.headerClicked(modelData)
                             }
                         }
                     }
@@ -167,16 +218,28 @@ Rectangle {
                     model: root.displayRows
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+                    Keys.onReturnPressed: {
+                        if (currentIndex >= 0 && currentItem) {
+                            var p = currentItem.modelData["Path"] || ""
+                            var n = currentItem.modelData["File"] || ""
+                            root.selectedFilePath = p
+                            root.selectedFileName  = n
+                            if (p !== "") root.fileOpenRequested(p, n)
+                        }
+                    }
+                    Keys.onEnterPressed: Keys.returnPressed(event)
+
                     delegate: Item {
                         required property var modelData
                         required property int index
                         width: detailsList.width; height: 30
 
                         readonly property bool isSelected: (modelData["Path"] || "") === root.selectedFilePath
+                        readonly property bool isCurrent:  ListView.isCurrentItem
 
                         Rectangle {
                             x: -pane.hOffset; width: root.totalW; height: parent.height
-                            color: isSelected
+                            color: (isSelected || isCurrent)
                                    ? window.sysPal.highlight
                                    : (rowMouse.containsMouse ? window.sysPal.highlight
                                                              : (index % 2 === 0 ? window.sysPal.alternateBase : "transparent"))
@@ -193,7 +256,7 @@ Rectangle {
                                     Text {
                                         anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 4
                                         text: { var v = modelData[colKey]; return v !== undefined && v !== null ? v : "" }
-                                        color: (rowMouse.containsMouse || isSelected)
+                                        color: (rowMouse.containsMouse || isSelected || isCurrent)
                                                ? window.sysPal.highlightedText
                                                : window.sysPal.windowText
                                         font.pixelSize: 12
@@ -211,6 +274,8 @@ Rectangle {
                             ToolTip.delay: 600
                             ToolTip.text: "Click to select and open '" + (modelData["File"] || "") + "' in the Image Viewer"
                             onClicked: {
+                                detailsList.currentIndex = index
+                                detailsList.forceActiveFocus()
                                 var p = modelData["Path"] || ""
                                 var n = modelData["File"] || ""
                                 root.selectedFilePath = p

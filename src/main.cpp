@@ -14,6 +14,7 @@
 #include "locationservice.h"
 #include "lightpollutionservice.h"
 #include "wikiservice.h"
+#include "seestarservice.h"
 
 int main(int argc, char *argv[])
 {
@@ -45,6 +46,7 @@ int main(int argc, char *argv[])
     LocationService         locationService;
     LightPollutionService   lightPollutionService;
     WikiService             wikiService;
+    SeestarService          seestarService;
 
     // OS location feeds directly into weather/planner location.
     QObject::connect(&locationService, &LocationService::locationObtained,
@@ -77,6 +79,7 @@ int main(int argc, char *argv[])
     ctx->setContextProperty("locationService",         &locationService);
     ctx->setContextProperty("lightPollutionService",   &lightPollutionService);
     ctx->setContextProperty("wikiService",             &wikiService);
+    ctx->setContextProperty("seestarService",          &seestarService);
 
     // ── Populate models when a scan completes ─────────────────────────────────
     static const QStringList columns = {

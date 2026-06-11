@@ -304,6 +304,57 @@ ApplicationWindow {
     // need their own SystemPalette object.
     readonly property SystemPalette sysPal: sysPalette
 
+    // ── Seestar status panel (top-right, fixed, never scrolls) ───────────────
+    Item {
+        id: seestarPanel
+        anchors { top: parent.top; right: parent.right }
+        width: 160
+        height: controlsPanel.height + 20
+        z: 1
+
+        Column {
+            anchors { top: parent.top; left: parent.left }
+            anchors.topMargin: 14
+            anchors.leftMargin: 10
+            spacing: 5
+
+            Row {
+                spacing: 3
+                Text { text: "Seestar Detected:"; font.pixelSize: 10; color: sysPalette.windowText }
+                Text {
+                    text: seestarService.connected ? "Yes" : "No"
+                    font.pixelSize: 10
+                    color: seestarService.connected ? "#66bb6a" : "#ef5350"
+                }
+            }
+            Row {
+                spacing: 3
+                Text { text: "Seestar Telescope Files:"; font.pixelSize: 10; color: sysPalette.windowText }
+                Text {
+                    text: !seestarService.connected ? "—"
+                          : seestarService.hasMyWorks ? "Found" : "Not-Found"
+                    font.pixelSize: 10
+                    color: !seestarService.connected ? sysPalette.placeholderText
+                           : seestarService.hasMyWorks ? "#66bb6a" : "#ef5350"
+                }
+            }
+            Row {
+                spacing: 3
+                Text { text: "Seestar Free Space:"; font.pixelSize: 10; color: sysPalette.windowText }
+                Text {
+                    readonly property double gb: seestarService.freeBytes / 1073741824
+                    text: !seestarService.connected ? "—" : gb.toFixed(1) + " GB"
+                    font.pixelSize: 10
+                    color: !seestarService.connected     ? sysPalette.placeholderText
+                           : gb >= 32.0                  ? "#66bb6a"
+                           : gb >= 12.0                  ? "#ffd54f"
+                           :                               "#ef5350"
+                }
+            }
+            Text { text: "Destination Directory: —";   font.pixelSize: 10; color: sysPalette.windowText }
+        }
+    }
+
     ScrollView {
         id: scrollView
         anchors.fill: parent
@@ -318,9 +369,10 @@ ApplicationWindow {
 
             ControlsPanel {
                 id: controlsPanel
-                anchors.left:    parent.left
-                anchors.right:   parent.right
-                anchors.margins: 12
+                anchors.left:       parent.left
+                anchors.right:      parent.right
+                anchors.margins:    12
+                anchors.rightMargin: seestarPanel.width + 12
                 onJpgScanned: function(rows) {
                     fileDetailsView.allRows = rows
                 }
@@ -345,6 +397,7 @@ ApplicationWindow {
                     anchors.left: parent.left
                     // width is self-determined by the component (colW sum + margins)
                     onTargetSelected: function(name) {
+                        catalogBreakdown.selectedTarget     = name
                         imagingCalendar.activeTargetFilter  = name
                         imagingCalendar.activeCatalogFilter = ""
                         imagingCalendar.buildCalendar(window.fullMetadataList)
@@ -359,6 +412,7 @@ ApplicationWindow {
                     anchors.leftMargin:  2
                     anchors.right:       parent.right
                     onCatalogSelected: function(name) {
+                        catalogBreakdown.selectedTarget     = ""
                         imagingCalendar.activeCatalogFilter = name
                         imagingCalendar.activeTargetFilter  = ""
                         imagingCalendar.buildCalendar(window.fullMetadataList)
@@ -385,6 +439,7 @@ ApplicationWindow {
                 anchors.margins: 12
                 height: 500
                 onShowAllRequested: {
+                    catalogBreakdown.selectedTarget     = ""
                     imagingCalendar.activeCatalogFilter = ""
                     imagingCalendar.activeTargetFilter  = ""
                     imagingCalendar.buildCalendar(window.fullMetadataList)

@@ -166,6 +166,17 @@ Window {
         return h + "h" + (m > 0 ? " " + m + "m" : "")
     }
 
+    // Returns a red/yellow/green color based on observed vs recommended-minimum hours.
+    // < 50 % of min → red   |   50–99 % → yellow   |   ≥ 100 % → green
+    function obsProgressColor(observedSeconds, type) {
+        if (observedSeconds <= 0) return pal.placeholderText
+        var recMin = recommendedSessionHours(type).min * 3600
+        var ratio  = observedSeconds / recMin
+        if (ratio >= 1.0) return "#66bb6a"
+        if (ratio >= 0.5) return "#ffd54f"
+        return "#ef5350"
+    }
+
     // ── Light pollution / observation time helpers ────────────────────────────
 
     function bortleColor(b) {
@@ -517,7 +528,13 @@ Window {
                                     var s = targetSummaryModel.integrationSecondsForTarget(o.name)
                                     return plannerWindow.fmtTotalTime(s)
                                 }
-                                font.pixelSize: 18; font.bold: true; color: pal.windowText
+                                font.pixelSize: 18; font.bold: true
+                                color: {
+                                    var o = plannerWindow.selectedObj
+                                    if (!o) return pal.windowText
+                                    var s = targetSummaryModel.integrationSecondsForTarget(o.name)
+                                    return plannerWindow.obsProgressColor(s, o.type)
+                                }
                             }
                             Text {
                                 text: {
@@ -542,7 +559,6 @@ Window {
                             }
                             Rectangle {
                                 height: parent.height; radius: 4
-                                color: pal.highlight
                                 width: {
                                     var o = plannerWindow.selectedObj
                                     if (!o) return 0
@@ -550,6 +566,12 @@ Window {
                                     if (observed <= 0) return 0
                                     var recMin = plannerWindow.recommendedSessionHours(o.type).min * 3600
                                     return Math.min(parent.width, parent.width * (observed / recMin))
+                                }
+                                color: {
+                                    var o = plannerWindow.selectedObj
+                                    if (!o) return pal.highlight
+                                    var s = targetSummaryModel.integrationSecondsForTarget(o.name)
+                                    return plannerWindow.obsProgressColor(s, o.type)
                                 }
                                 Behavior on width { NumberAnimation { duration: 600; easing.type: Easing.OutCubic } }
                             }
@@ -957,6 +979,11 @@ Window {
 
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+                    onCurrentIndexChanged: {
+                        if (activeFocus && currentIndex >= 0 && currentIndex < count)
+                            plannerWindow.selectedObj = plannerService.objects.entryAt(currentIndex)
+                    }
+
                     delegate: Item {
                         id: row
                         required property string name
@@ -981,23 +1008,25 @@ Window {
                             plannerWindow.selectedObj !== null &&
                             plannerWindow.selectedObj.name === name
 
+                        readonly property bool isCurrent: ListView.isCurrentItem
+
                         readonly property bool isScheduled: {
                             var _ = plannerWindow.scheduleRevision
                             return schedulerService.isScheduled(plannerWindow.currentNightDateStr, name)
                         }
 
                         property color textColor:
-                            (isSelected || rowMouse.containsMouse)
+                            (isSelected || isCurrent || rowMouse.containsMouse)
                             ? pal.highlightedText : pal.windowText
 
                         Rectangle {
                             anchors.fill: parent; radius: 2
                             color: row.isSelected
                                    ? pal.highlight
-                                   : (row.isScheduled
-                                      ? Qt.rgba(pal.highlight.r, pal.highlight.g, pal.highlight.b, 0.18)
-                                      : (rowMouse.containsMouse
-                                         ? Qt.rgba(pal.highlight.r, pal.highlight.g, pal.highlight.b, 0.35)
+                                   : (row.isCurrent || rowMouse.containsMouse
+                                      ? Qt.rgba(pal.highlight.r, pal.highlight.g, pal.highlight.b, 0.35)
+                                      : (row.isScheduled
+                                         ? Qt.rgba(pal.highlight.r, pal.highlight.g, pal.highlight.b, 0.18)
                                          : (row.index % 2 === 0 ? pal.alternateBase : "transparent")))
                         }
 
@@ -1047,7 +1076,11 @@ Window {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
-                            onClicked: plannerWindow.selectedObj = plannerService.objects.entryAt(index)
+                            onClicked: {
+                                objList.currentIndex = index
+                                objList.forceActiveFocus()
+                                plannerWindow.selectedObj = plannerService.objects.entryAt(index)
+                            }
                         }
                     }
 
@@ -1202,12 +1235,19 @@ Window {
                     Canvas {
                         id: skyCanvas
                         width: parent.width
-                        height: Math.min(200, topSection.height - 500)
+                        height: Math.max(0, Math.min(200, topSection.height - 500))
 
-                        property var watchObj: plannerWindow.selectedObj
-                        onWatchObjChanged: requestPaint()
-                        onWidthChanged:    requestPaint()
-                        onHeightChanged:   requestPaint()
+                        property var watchObj:   plannerWindow.selectedObj
+                        property int watchNight: plannerWindow.nightOffset
+                        property real watchLat:  plannerWindow.latitude
+                        property real watchLon:  plannerWindow.longitude
+
+                        onWatchObjChanged:   Qt.callLater(requestPaint)
+                        onWatchNightChanged: Qt.callLater(requestPaint)
+                        onWatchLatChanged:   Qt.callLater(requestPaint)
+                        onWatchLonChanged:   Qt.callLater(requestPaint)
+                        onWidthChanged:      Qt.callLater(requestPaint)
+                        onHeightChanged:     Qt.callLater(requestPaint)
 
                         onPaint: {
                             var ctx2d = getContext("2d")
@@ -1361,7 +1401,8 @@ Window {
                                     font.pixelSize: 11; font.bold: true; color: pal.placeholderText
                                 }
 
-                                property var o: parent.parent.parent.parent.parent.obj || {}
+                                // parent → right-half Item → Row → outer Column (has obj)
+                                property var o: parent.parent.parent.obj || {}
 
                                 Grid {
                                     columns: 2; columnSpacing: 10; rowSpacing: 5
@@ -1372,7 +1413,7 @@ Window {
                                         font.pixelSize: 11; color: pal.windowText
                                         text: {
                                             var o = parent.o
-                                            if (!o || !o.riseUtcH) return "—"
+                                            if (!o || o.riseUtcH == null) return "—"
                                             if (o.circumpolar) return "All night"
                                             if (o.riseUtcH === 0 && o.setUtcH === 0) return "—"
                                             return plannerWindow.fmtHHMM(
@@ -1385,7 +1426,7 @@ Window {
                                         font.pixelSize: 11; color: pal.windowText
                                         text: {
                                             var o = parent.o
-                                            if (!o || !o.riseUtcH) return "—"
+                                            if (!o || o.riseUtcH == null) return "—"
                                             return plannerWindow.recommendedWindow(
                                                 o.circumpolar, o.riseUtcH, o.setUtcH)
                                         }
@@ -1396,7 +1437,7 @@ Window {
                                         font.pixelSize: 11; color: pal.windowText
                                         text: {
                                             var o = parent.o
-                                            if (!o || o.peakAlt === undefined) return "—"
+                                            if (!o || o.peakAlt == null) return "—"
                                             return plannerWindow.fmtAlt(o.peakAlt)
                                         }
                                     }

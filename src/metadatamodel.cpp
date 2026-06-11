@@ -1,5 +1,6 @@
 #include "metadatamodel.h"
 #include <QSet>
+#include <algorithm>
 
 // - Implementation of models that expose metadata, targets, calibrations, and catalog data to QML -
 
@@ -160,6 +161,26 @@ void TargetSummaryModel::setEntries(const QVariantList &entries)
     m_entries.clear();
     for (const auto &e : entries)
         m_entries.append(e.toMap());
+    endResetModel();
+}
+
+void TargetSummaryModel::sortBy(const QString &column, bool ascending)
+{
+    beginResetModel();
+    std::stable_sort(m_entries.begin(), m_entries.end(),
+        [&](const QVariantMap &a, const QVariantMap &b) {
+            bool less;
+            if (column == QLatin1String("Target")) {
+                less = a.value("Target").toString().compare(
+                           b.value("Target").toString(), Qt::CaseInsensitive) < 0;
+            } else if (column == QLatin1String("FITS Count")) {
+                less = a.value("FITS Count").toInt() < b.value("FITS Count").toInt();
+            } else {
+                less = a.value("Total Integration Time s").toDouble()
+                     < b.value("Total Integration Time s").toDouble();
+            }
+            return ascending ? less : !less;
+        });
     endResetModel();
 }
 

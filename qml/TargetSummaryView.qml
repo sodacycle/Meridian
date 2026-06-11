@@ -12,8 +12,20 @@ Rectangle {
     border.width: 1
     radius: 6
 
-    property int rowCount: 0
+    property int    rowCount: 0
+    property string sortCol:  ""
+    property bool   sortAsc:  true
     signal targetSelected(string targetName)
+
+    function headerClicked(col) {
+        if (sortCol === col) {
+            sortAsc = !sortAsc
+        } else {
+            sortCol = col
+            sortAsc = (col === "Target")
+        }
+        targetSummaryModel.sortBy(sortCol, sortAsc)
+    }
 
     Connections {
         target: targetSummaryModel
@@ -34,24 +46,49 @@ Rectangle {
         spacing: 10
 
         Text {
-            text: "Target Summary"
+            text: "Target Summary" + (root.rowCount > 0 ? " - Observed Targets: " + root.rowCount + "  |" : "")
             font.pixelSize: 20; font.bold: true
             color: window.sysPal.windowText; width: parent.width
         }
 
-        // Column headers
+        // Column headers (clickable — click to sort, click again to reverse)
         Row {
             spacing: 0; visible: root.rowCount > 0
             Repeater {
                 model: root.colL
                 Rectangle {
+                    required property string modelData
+                    required property int    index
                     width: root.colW[index]; height: 32
-                    color: window.sysPal.alternateBase
-                    Text {
-                        anchors.fill: parent; anchors.leftMargin: 8
-                        text: modelData; color: window.sysPal.windowText
-                        font.pixelSize: 13; font.bold: true
-                        verticalAlignment: Text.AlignVCenter
+                    color: root.sortCol === modelData
+                           ? Qt.rgba(window.sysPal.highlight.r, window.sysPal.highlight.g,
+                                     window.sysPal.highlight.b, 0.22)
+                           : window.sysPal.alternateBase
+                    Row {
+                        anchors { fill: parent; leftMargin: 8 }
+                        spacing: 3
+                        Text {
+                            text: modelData
+                            color: root.sortCol === modelData
+                                   ? window.sysPal.highlight : window.sysPal.windowText
+                            font.pixelSize: 13; font.bold: true
+                            verticalAlignment: Text.AlignVCenter
+                            height: parent.height
+                            elide: Text.ElideRight
+                        }
+                        Text {
+                            text: root.sortAsc ? "▲" : "▼"
+                            color: window.sysPal.highlight
+                            font.pixelSize: 9
+                            verticalAlignment: Text.AlignVCenter
+                            height: parent.height
+                            visible: root.sortCol === modelData
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.headerClicked(modelData)
                     }
                 }
             }
@@ -70,6 +107,12 @@ Rectangle {
                 model: targetSummaryModel
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+                Keys.onReturnPressed: {
+                    if (currentIndex >= 0 && currentItem)
+                        root.targetSelected(currentItem.targetName)
+                }
+                Keys.onEnterPressed: Keys.returnPressed(event)
+
                 delegate: Rectangle {
                     // FIX: capture all four role values into named properties
                     // before any inner Repeater. Using model.X inside an array
@@ -80,8 +123,10 @@ Rectangle {
                     required property int    fitsCount
                     required property string integrationTime
 
+                    readonly property bool isCurrent: ListView.isCurrentItem
+
                     width: targetList.width; height: 36
-                    color: rowMouse.containsMouse
+                    color: (rowMouse.containsMouse || isCurrent)
                            ? window.sysPal.highlight
                            : (index % 2 === 0 ? window.sysPal.alternateBase : "transparent")
                     radius: 3
@@ -94,7 +139,7 @@ Rectangle {
                             Text {
                                 anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 4
                                 text: targetName
-                                color: rowMouse.containsMouse ? window.sysPal.highlightedText : window.sysPal.windowText
+                                color: (rowMouse.containsMouse || isCurrent) ? window.sysPal.highlightedText : window.sysPal.windowText
                                 font.pixelSize: 13
                                 verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
                             }
@@ -104,7 +149,7 @@ Rectangle {
                             Text {
                                 anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 4
                                 text: fitsCount
-                                color: rowMouse.containsMouse ? window.sysPal.highlightedText : window.sysPal.windowText
+                                color: (rowMouse.containsMouse || isCurrent) ? window.sysPal.highlightedText : window.sysPal.windowText
                                 font.pixelSize: 13
                                 verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
                             }
@@ -114,7 +159,7 @@ Rectangle {
                             Text {
                                 anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 4
                                 text: integrationTime
-                                color: rowMouse.containsMouse ? window.sysPal.highlightedText : window.sysPal.windowText
+                                color: (rowMouse.containsMouse || isCurrent) ? window.sysPal.highlightedText : window.sysPal.windowText
                                 font.pixelSize: 13
                                 verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight
                             }
@@ -126,7 +171,11 @@ Rectangle {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: root.targetSelected(targetName)
+                        onClicked: {
+                            targetList.currentIndex = index
+                            targetList.forceActiveFocus()
+                            root.targetSelected(targetName)
+                        }
                         ToolTip.visible: containsMouse
                         ToolTip.delay: 500
                         ToolTip.text: "Filter calendar and file list to show only '" + targetName + "'"

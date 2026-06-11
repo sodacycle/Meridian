@@ -55,6 +55,7 @@ public:
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
 
     Q_INVOKABLE void   setEntries(const QVariantList &entries);
+    Q_INVOKABLE void   sortBy(const QString &column, bool ascending);
     Q_INVOKABLE double integrationSecondsForTarget(const QString &targetName) const;
     Q_INVOKABLE int    sessionCountForTarget(const QString &targetName) const;
 
