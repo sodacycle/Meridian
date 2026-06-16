@@ -2,6 +2,8 @@
 
 Meridian is a desktop application for astrophotographers that organises FITS files, plans observing sessions, and tracks imaging history. It is built with Qt 6 / QML and runs natively on Linux and Windows.
 
+**[Full documentation on the Wiki](https://github.com/sodacycle/Meridian/wiki)**
+
 ---
 
 ## Features
