@@ -145,6 +145,103 @@ export QML_SOURCES_PATHS="$SCRIPT_DIR/qml"
 "$LINUXDEPLOY_QT" --appdir="$APPDIR" \
     2>&1 | grep -v "Strip call failed\|relr\.dyn\|Unable to recognise\|deferred operations\|unsupported GNU_PROPERTY" || true
 
+# ── Pass 3: Guarantee xcb platform plugin is present ─────────────────────────
+# linuxdeploy-plugin-qt often fails to bundle libqxcb.so on Qt6/Arch systems.
+info "Pass 3: verifying xcb platform plugin..."
+XCB_DST="$APPDIR/usr/plugins/platforms/libqxcb.so"
+if [[ ! -f "$XCB_DST" ]]; then
+    XCB_SRC="$QT_PLUGINS_DIR/platforms/libqxcb.so"
+    [[ -f "$XCB_SRC" ]] || die "Qt xcb platform plugin not found at $XCB_SRC — ensure qt6-base is installed"
+    warn "  xcb plugin missing from AppDir — copying from $XCB_SRC"
+    mkdir -p "$APPDIR/usr/plugins/platforms"
+    cp "$XCB_SRC" "$XCB_DST"
+    # Re-run linuxdeploy with --library so it walks xcb's ELF dependencies
+    "$LINUXDEPLOY" \
+        --appdir="$APPDIR" \
+        --executable="$APPDIR/usr/bin/$BINARY_NAME" \
+        --library="$XCB_DST" \
+        2>&1 | grep -v "Strip call failed\|relr\.dyn\|Unable to recognise\|deferred operations\|unsupported GNU_PROPERTY" || true
+else
+    info "  xcb platform plugin present — OK"
+fi
+
+# ── Pass 4: Bundle Qt plugins and QML modules missed by linuxdeploy-plugin-qt ─
+# On Qt6/Arch, linuxdeploy-plugin-qt routinely skips TLS, GL integrations, and
+# QML modules. We always merge from the system Qt install (cp -r src/. dst/
+# merges without clobbering existing files) so partial dirs are completed, then
+# run linuxdeploy on ALL .so files in those dirs to resolve any missing deps.
+info "Pass 4: ensuring TLS, GL integrations, and QML modules..."
+
+QT_QML_DIR="$("$QMAKE6" -query QT_INSTALL_QML)"
+
+_ensure_plugin() {
+    local src="$1" dst_dir="$2"
+    local base; base="$(basename "$src")"
+    if [[ -f "$src" ]]; then
+        mkdir -p "$dst_dir"
+        if [[ ! -f "$dst_dir/$base" ]]; then
+            cp "$src" "$dst_dir/$base"
+            info "  copied plugin: $base"
+        fi
+    fi
+}
+
+_sync_qml_module() {
+    local module="$1"
+    local src="$QT_QML_DIR/$module"
+    local dst="$APPDIR/usr/qml/$module"
+    if [[ ! -d "$src" ]]; then
+        warn "  QML module not on system: $module"
+        return
+    fi
+    mkdir -p "$dst"
+    # Always merge — fills files missing from an incomplete linuxdeploy-plugin-qt copy
+    cp -r "$src/." "$dst/"
+    info "  synced QML module: $module"
+}
+
+# TLS backend — required for HTTPS / qt.network.ssl
+_ensure_plugin "$QT_PLUGINS_DIR/tls/libqopensslbackend.so"  "$APPDIR/usr/plugins/tls"
+_ensure_plugin "$QT_PLUGINS_DIR/tls/libqcertonlybackend.so" "$APPDIR/usr/plugins/tls"
+
+# XCB GL integrations — needed for hardware-accelerated OpenGL under XCB
+_ensure_plugin "$QT_PLUGINS_DIR/xcbglintegrations/libqxcb-glx-integration.so" \
+               "$APPDIR/usr/plugins/xcbglintegrations"
+_ensure_plugin "$QT_PLUGINS_DIR/xcbglintegrations/libqxcb-egl-integration.so" \
+               "$APPDIR/usr/plugins/xcbglintegrations"
+
+# QML modules this app actually imports
+for _module in \
+    QtQuick \
+    QtQuick/Controls \
+    QtQuick/Layouts \
+    QtQuick/Window \
+    QtQuick/Templates \
+    QtQml \
+    QtQml/Models; do
+    _sync_qml_module "$_module"
+done
+
+# Always re-run linuxdeploy over ALL .so files in these dirs so that every
+# plugin (new or pre-existing) has its ELF dependencies deployed.
+PASS4_LIBS=()
+while IFS= read -r -d '' _so; do
+    PASS4_LIBS+=("--library=$_so")
+done < <(find \
+    "$APPDIR/usr/plugins/tls" \
+    "$APPDIR/usr/plugins/xcbglintegrations" \
+    "$APPDIR/usr/qml" \
+    -name "*.so" -print0 2>/dev/null)
+
+if [[ ${#PASS4_LIBS[@]} -gt 0 ]]; then
+    info "  resolving deps for ${#PASS4_LIBS[@]} plugin/QML .so files..."
+    "$LINUXDEPLOY" \
+        --appdir="$APPDIR" \
+        --executable="$APPDIR/usr/bin/$BINARY_NAME" \
+        "${PASS4_LIBS[@]}" \
+        2>&1 | grep -v "Strip call failed\|relr\.dyn\|Unable to recognise\|deferred operations\|unsupported GNU_PROPERTY" || true
+fi
+
 # ── Bundle platform theme plugins ─────────────────────────────────────────────
 # linuxdeploy-plugin-qt often omits these (they live in separate distro packages).
 # We copy whichever are present on the build machine; the AppRun only activates

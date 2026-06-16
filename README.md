@@ -162,6 +162,23 @@ All operations display real-time progress and are non-destructive to FITS data e
 
 ---
 
+## Download
+
+Pre-built AppImages for Linux are available on the [Releases page](https://github.com/sodacycle/Meridian/releases/).
+
+| Platform | Download |
+|---|---|
+| Linux x86-64 | [Meridian-x86_64.AppImage](https://github.com/sodacycle/Meridian/releases/latest/download/Meridian-x86_64.AppImage) |
+
+Download, make executable, and run — no Qt installation required:
+
+```bash
+chmod +x Meridian-x86_64.AppImage
+./Meridian-x86_64.AppImage
+```
+
+---
+
 ## Requirements
 
 | Dependency | Minimum version |

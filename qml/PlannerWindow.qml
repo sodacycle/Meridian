@@ -1162,8 +1162,11 @@ Window {
                     Column {
                         spacing: 3
                         Text {
-                            text: parent.parent.obj.commonName !== ""
-                                  ? parent.parent.obj.commonName : parent.parent.obj.name || ""
+                            text: {
+                                var o = parent.parent.obj
+                                if (!o) return ""
+                                return (o.commonName || "") !== "" ? o.commonName : (o.name || "")
+                            }
                             font.pixelSize: 22; font.bold: true; color: pal.windowText
                         }
                         Text {
@@ -1186,7 +1189,7 @@ Window {
                         Text {
                             id: typeLabel
                             anchors.centerIn: parent
-                            text: parent.parent.parent.obj.type || ""
+                            text: (parent.parent.parent.obj && parent.parent.parent.obj.type) || ""
                             color: pal.highlightedText; font.pixelSize: 11; font.bold: true
                         }
                     }
