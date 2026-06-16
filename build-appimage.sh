@@ -204,6 +204,9 @@ _sync_qml_module() {
 _ensure_plugin "$QT_PLUGINS_DIR/tls/libqopensslbackend.so"  "$APPDIR/usr/plugins/tls"
 _ensure_plugin "$QT_PLUGINS_DIR/tls/libqcertonlybackend.so" "$APPDIR/usr/plugins/tls"
 
+# SVG imageformat plugin — required to render .svg files via QQuickImage
+_ensure_plugin "$QT_PLUGINS_DIR/imageformats/libqsvg.so" "$APPDIR/usr/plugins/imageformats"
+
 # XCB GL integrations — needed for hardware-accelerated OpenGL under XCB
 _ensure_plugin "$QT_PLUGINS_DIR/xcbglintegrations/libqxcb-glx-integration.so" \
                "$APPDIR/usr/plugins/xcbglintegrations"
