@@ -80,115 +80,66 @@ void WikiService::lookup(const QString &objectName)
 {
     const QString title = articleTitle(objectName);
 
+    // Single request: thumbnail + intro extract, with redirect following.
+    // action=query handles redirects natively (e.g. "M 31" → Andromeda Galaxy).
     QUrl url(QStringLiteral("https://en.wikipedia.org/w/api.php"));
-    QUrlQuery query;
-    query.addQueryItem(QStringLiteral("action"), QStringLiteral("parse"));
-    query.addQueryItem(QStringLiteral("page"),   title);
-    query.addQueryItem(QStringLiteral("prop"),   QStringLiteral("text"));
-    query.addQueryItem(QStringLiteral("format"), QStringLiteral("json"));
-    url.setQuery(query);
+    QUrlQuery q;
+    q.addQueryItem(QStringLiteral("action"),      QStringLiteral("query"));
+    q.addQueryItem(QStringLiteral("titles"),      title);
+    q.addQueryItem(QStringLiteral("prop"),        QStringLiteral("pageimages|extracts"));
+    q.addQueryItem(QStringLiteral("pithumbsize"), QStringLiteral("300"));
+    q.addQueryItem(QStringLiteral("exintro"),     QStringLiteral("1"));
+    q.addQueryItem(QStringLiteral("explaintext"), QStringLiteral("1"));
+    q.addQueryItem(QStringLiteral("redirects"),   QStringLiteral("1"));
+    q.addQueryItem(QStringLiteral("format"),      QStringLiteral("json"));
+    url.setQuery(q);
 
-    QNetworkReply *reply = m_network->get(QNetworkRequest(url));
+    QNetworkRequest req(url);
+    req.setHeader(QNetworkRequest::UserAgentHeader,
+                  QStringLiteral("Meridian/1.0 (https://github.com/sodacycle/Meridian)"));
+    QNetworkReply *reply = m_network->get(req);
+
     connect(reply, &QNetworkReply::finished, this, [this, reply, objectName]() {
+        reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
             emit lookupFailed(objectName, reply->errorString());
-            reply->deleteLater();
             return;
         }
 
-        const QByteArray raw = reply->readAll();
-        reply->deleteLater();
-
-        const QJsonDocument doc = QJsonDocument::fromJson(raw);
+        const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
         if (!doc.isObject()) {
-            emit lookupFailed(objectName, QStringLiteral("Invalid JSON response"));
-            return;
-        }
-        const QJsonObject root = doc.object();
-        if (root.contains(QStringLiteral("error"))) {
-            const QString info = root[QStringLiteral("error")]
-                                     .toObject()[QStringLiteral("info")].toString();
-            emit lookupFailed(objectName, info.isEmpty()
-                              ? QStringLiteral("Wikipedia page not found") : info);
+            emit lookupFailed(objectName, QStringLiteral("Invalid JSON"));
             return;
         }
 
-        const QString html = root[QStringLiteral("parse")]
-                                 .toObject()[QStringLiteral("text")]
-                                 .toObject()[QStringLiteral("*")].toString();
-        if (html.isEmpty()) {
-            emit lookupFailed(objectName, QStringLiteral("No content found"));
+        const QJsonObject pages = doc.object()
+                                      .value(QStringLiteral("query")).toObject()
+                                      .value(QStringLiteral("pages")).toObject();
+        if (pages.isEmpty()) {
+            emit lookupFailed(objectName, QStringLiteral("No results"));
             return;
         }
 
-        parseResponse(html.toUtf8(), objectName);
+        const QJsonObject page = pages.begin().value().toObject();
+        if (page.contains(QStringLiteral("missing"))) {
+            emit lookupFailed(objectName, QStringLiteral("No Wikipedia article found"));
+            return;
+        }
+
+        QVariantMap data;
+        data[QStringLiteral("wikiTitle")] = page.value(QStringLiteral("title")).toString();
+
+        const QString thumbUrl = page.value(QStringLiteral("thumbnail")).toObject()
+                                     .value(QStringLiteral("source")).toString();
+        if (!thumbUrl.isEmpty())
+            data[QStringLiteral("thumbnailUrl")] = thumbUrl;
+
+        const QString extract = page.value(QStringLiteral("extract")).toString().trimmed();
+        if (!extract.isEmpty())
+            data[QStringLiteral("extract")] = extract.left(600);
+
+        emit infoboxReady(data, objectName);
     });
 }
 
-// ── HTML infobox parser ───────────────────────────────────────────────────────
 
-static QString stripTags(const QString &html)
-{
-    QString s = html;
-    s.remove(QRegularExpression(QStringLiteral("<[^>]*>")));
-    // Collapse HTML entities most common in infoboxes
-    s.replace(QStringLiteral("&amp;"),  QStringLiteral("&"));
-    s.replace(QStringLiteral("&lt;"),   QStringLiteral("<"));
-    s.replace(QStringLiteral("&gt;"),   QStringLiteral(">"));
-    s.replace(QStringLiteral("&nbsp;"), QStringLiteral(" "));
-    s.replace(QStringLiteral("&#160;"), QStringLiteral(" "));
-    return s.simplified();
-}
-
-void WikiService::parseResponse(const QByteArray &rawHtml, const QString &objectName)
-{
-    const QString html = QString::fromUtf8(rawHtml);
-    QVariantMap result;
-
-    // Wikipedia infobox rows consistently use class="infobox-label" on <th>
-    // and class="infobox-data" on <td>. Match each <tr> that has both.
-    // DotMatchesEverythingOption lets .* span newlines within a row.
-    static const QRegularExpression rowRx(
-        QStringLiteral(
-            "<tr[^>]*>"
-            ".*?<th[^>]*>(.*?)</th>"
-            ".*?<td[^>]*>(.*?)</td>"
-            ".*?</tr>"),
-        QRegularExpression::DotMatchesEverythingOption
-        | QRegularExpression::CaseInsensitiveOption);
-
-    auto it = rowRx.globalMatch(html);
-    while (it.hasNext()) {
-        const QRegularExpressionMatch m = it.next();
-        const QString label = stripTags(m.captured(1)).toLower();
-        const QString value = stripTags(m.captured(2));
-
-        if (value.isEmpty()) continue;
-
-        if (label.contains(QStringLiteral("constellation")))
-            result[QStringLiteral("constellation")] = value;
-        else if (label.contains(QStringLiteral("right ascension")))
-            result[QStringLiteral("rightAscension")] = value;
-        else if (label.contains(QStringLiteral("declination")))
-            result[QStringLiteral("declination")] = value;
-        else if (label.contains(QStringLiteral("distance")))
-            result[QStringLiteral("distance")] = value;
-        else if (label.contains(QStringLiteral("apparent visual magnitude"))
-              || label.contains(QStringLiteral("apparent magnitude")))
-            result[QStringLiteral("apparentMagnitude")] = value;
-        else if (label.contains(QStringLiteral("type")))
-            result[QStringLiteral("type")] = value;
-        else if (label.contains(QStringLiteral("apparent size")))
-            result[QStringLiteral("apparentSize")] = value;
-        else if (label.contains(QStringLiteral("size"))
-              && !label.contains(QStringLiteral("apparent")))
-            result[QStringLiteral("size")] = value;
-    }
-
-    if (result.isEmpty()) {
-        emit lookupFailed(objectName, QStringLiteral("No infobox found"));
-        return;
-    }
-
-    emit infoboxReady(result, objectName);
-}

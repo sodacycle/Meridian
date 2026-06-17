@@ -27,7 +27,6 @@ signals:
 private:
     QNetworkAccessManager *m_network;
 
-    void parseResponse(const QByteArray &html, const QString &objectName);
 
     static const QHash<QString, QString> &constellationMap();
 };

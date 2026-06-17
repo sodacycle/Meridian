@@ -29,6 +29,20 @@ Window {
 
     onSearchTextChanged: plannerService.objects.setFilter(searchText)
 
+    property var    wikiData:    null
+    property bool   wikiLoading: false
+    property string wikiError:   ""
+
+    onSelectedObjChanged: {
+        wikiData    = null
+        wikiLoading = false
+        wikiError   = ""
+        if (selectedObj) {
+            wikiLoading = true
+            wikiService.lookup(selectedObj.name)
+        }
+    }
+
     function applySort() {
         plannerService.objects.sortBy(plannerWindow.sortCol, plannerWindow.sortAsc)
     }
@@ -259,6 +273,24 @@ Window {
         function onReadyChanged() {
             if (plannerService.ready)
                 plannerWindow.applySort()
+        }
+    }
+
+    Connections {
+        target: wikiService
+        function onInfoboxReady(data, objectName) {
+            if (plannerWindow.selectedObj && plannerWindow.selectedObj.name === objectName) {
+                plannerWindow.wikiData    = data
+                plannerWindow.wikiLoading = false
+                plannerWindow.wikiError   = ""
+            }
+        }
+        function onLookupFailed(objectName, error) {
+            if (plannerWindow.selectedObj && plannerWindow.selectedObj.name === objectName) {
+                plannerWindow.wikiData    = null
+                plannerWindow.wikiLoading = false
+                plannerWindow.wikiError   = error
+            }
         }
     }
 
@@ -1196,36 +1228,67 @@ Window {
 
                     Rectangle { width: parent.width; height: 1; color: pal.mid }
 
-                    Grid {
-                        id: statsGrid
-                        columns: 2; columnSpacing: 20; rowSpacing: 8
+                    // Stats + Wikipedia thumbnail side-by-side
+                    Item {
+                        width: parent.width
+                        height: Math.max(statsGrid.implicitHeight, wikiThumb.visible ? wikiThumb.height : 0)
                         property var obj: parent.obj
 
-                        Text { text: "Magnitude";     color: pal.placeholderText; font.pixelSize: 12 }
-                        Text { text: plannerWindow.fmtMag(statsGrid.obj.mag); color: pal.windowText; font.pixelSize: 12 }
+                        Grid {
+                            id: statsGrid
+                            anchors { left: parent.left; top: parent.top }
+                            columns: 2; columnSpacing: 20; rowSpacing: 8
+                            property var obj: parent.obj
 
-                        Text { text: "Size";           color: pal.placeholderText; font.pixelSize: 12 }
-                        Text { text: plannerWindow.fmtSize(statsGrid.obj.sizeArcmin); color: pal.windowText; font.pixelSize: 12 }
+                            Text { text: "Magnitude";     color: pal.placeholderText; font.pixelSize: 12 }
+                            Text { text: plannerWindow.fmtMag(statsGrid.obj.mag); color: pal.windowText; font.pixelSize: 12 }
 
-                        Text { text: "Peak Altitude";  color: pal.placeholderText; font.pixelSize: 12 }
-                        Text { text: statsGrid.obj.peakAlt !== undefined
-                                     ? plannerWindow.fmtAlt(statsGrid.obj.peakAlt) : "—"
-                               color: pal.windowText; font.pixelSize: 12 }
+                            Text { text: "Size";           color: pal.placeholderText; font.pixelSize: 12 }
+                            Text { text: plannerWindow.fmtSize(statsGrid.obj.sizeArcmin); color: pal.windowText; font.pixelSize: 12 }
 
-                        Text { text: "Visible Window"; color: pal.placeholderText; font.pixelSize: 12 }
-                        Text { text: plannerWindow.fmtWindow(statsGrid.obj.circumpolar, statsGrid.obj.windowH)
-                               color: pal.windowText; font.pixelSize: 12 }
+                            Text { text: "Peak Altitude";  color: pal.placeholderText; font.pixelSize: 12 }
+                            Text { text: statsGrid.obj.peakAlt !== undefined
+                                         ? plannerWindow.fmtAlt(statsGrid.obj.peakAlt) : "—"
+                                   color: pal.windowText; font.pixelSize: 12 }
 
-                        Text { text: "UTC Visible";    color: pal.placeholderText; font.pixelSize: 12 }
-                        Text { text: plannerWindow.fmtViewableUTC(statsGrid.obj.circumpolar,
-                                         statsGrid.obj.riseUtcH, statsGrid.obj.setUtcH)
-                               color: pal.windowText; font.pixelSize: 12 }
+                            Text { text: "Visible Window"; color: pal.placeholderText; font.pixelSize: 12 }
+                            Text { text: plannerWindow.fmtWindow(statsGrid.obj.circumpolar, statsGrid.obj.windowH)
+                                   color: pal.windowText; font.pixelSize: 12 }
 
-                        Text { text: "RA  /  Dec";     color: pal.placeholderText; font.pixelSize: 12 }
-                        Text { text: statsGrid.obj.raHours !== undefined
-                                     ? (plannerWindow.fmtRA(statsGrid.obj.raHours) + "  ·  "
-                                        + plannerWindow.fmtDec(statsGrid.obj.decDeg)) : "—"
-                               color: pal.windowText; font.pixelSize: 12 }
+                            Text { text: "UTC Visible";    color: pal.placeholderText; font.pixelSize: 12 }
+                            Text { text: plannerWindow.fmtViewableUTC(statsGrid.obj.circumpolar,
+                                             statsGrid.obj.riseUtcH, statsGrid.obj.setUtcH)
+                                   color: pal.windowText; font.pixelSize: 12 }
+
+                            Text { text: "RA  /  Dec";     color: pal.placeholderText; font.pixelSize: 12 }
+                            Text { text: statsGrid.obj.raHours !== undefined
+                                         ? (plannerWindow.fmtRA(statsGrid.obj.raHours) + "  ·  "
+                                            + plannerWindow.fmtDec(statsGrid.obj.decDeg)) : "—"
+                                   color: pal.windowText; font.pixelSize: 12 }
+                        }
+
+                        // Wikipedia thumbnail — right of stats, vertically centred
+                        Image {
+                            id: wikiThumb
+                            anchors {
+                                left: statsGrid.right; leftMargin: 12
+                                right: parent.right
+                                top: parent.top
+                            }
+                            height: Math.min(statsGrid.implicitHeight,
+                                             Math.round(implicitHeight * width / Math.max(1, implicitWidth)))
+                            fillMode: Image.PreserveAspectFit
+                            asynchronous: true; cache: true; clip: true
+                            source: (plannerWindow.wikiData && plannerWindow.wikiData["thumbnailUrl"])
+                                    ? plannerWindow.wikiData["thumbnailUrl"] : ""
+                            visible: source !== "" || plannerWindow.wikiLoading
+
+                            BusyIndicator {
+                                anchors.centerIn: parent; width: 24; height: 24
+                                running: plannerWindow.wikiLoading
+                                visible: plannerWindow.wikiLoading && wikiThumb.status !== Image.Ready
+                            }
+                        }
                     }
 
                     Rectangle { width: parent.width; height: 1; color: pal.mid }
