@@ -4,8 +4,10 @@
 #include <QObject>
 #include <QString>
 #include <QList>
+#include <QStringList>
 #include <QVariantMap>
 #include <QAtomicInt>
+#include <QFutureWatcher>
 
 // - Holds a single FITS file metadata row after scanning -
 struct MetadataEntry {
@@ -33,6 +35,7 @@ struct MetadataEntry {
     QString focusPosition;
     QString imageType;
     QString stackingSoftware;
+    bool    rejected = false;
 
     QVariantMap toVariantMap() const;
 };
@@ -76,6 +79,8 @@ class FitsScanner : public QObject
     Q_PROPERTY(bool running READ isRunning NOTIFY runningChanged)
     Q_PROPERTY(int filesProcessed READ filesProcessed NOTIFY progressChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY progressChanged)
+    Q_PROPERTY(QStringList directories READ directories NOTIFY directoriesChanged)
+    Q_PROPERTY(QString currentScanDirectory READ currentScanDirectory NOTIFY currentScanDirectoryChanged)
 
     struct FrameTypeResult {
         QString frameType;
@@ -88,8 +93,14 @@ public:
     bool isRunning() const;
     int filesProcessed() const;
     QString statusText() const;
+    QStringList directories() const;
+    QString currentScanDirectory() const;
 
     Q_INVOKABLE QString selectDirectory();
+    Q_INVOKABLE void addDirectory(const QString &path);
+    Q_INVOKABLE void removeDirectory(int index);
+    Q_INVOKABLE void clearDirectories();
+    Q_INVOKABLE void scanDirectories();
     Q_INVOKABLE void scanDirectory(const QString &dirPath);
     Q_INVOKABLE void cancel();
 
@@ -107,17 +118,27 @@ signals:
     void scanCompleted(const QVariantList &metadataList,
                        const QVariantList &targetSummary,
                        const QVariantList &calibrationSummary);
+    void partialScanCompleted(const QVariantList &metadataList,
+                              const QVariantList &targetSummary,
+                              const QVariantList &calibrationSummary);
     void scanError(const QString &error);
     void runningChanged();
     void progressChanged();
+    void directoriesChanged();
+    void currentScanDirectoryChanged();
 
 private:
+    ScanResult aggregateEntries(const QList<MetadataEntry> &entries) const;
+    ScanResult buildScanResult(const QStringList &paths);
     void walkDirectory(const QString &dir, QList<MetadataEntry> &results);
+    void onScanFinished(QFutureWatcher<ScanResult> *watcher);
 
     QAtomicInt m_canceled;
     bool m_running = false;
     int m_filesProcessed = 0;
     QString m_statusText;
+    QStringList m_directories;
+    QString m_currentScanDirectory;
 };
 
 #endif // FITSCANNER_H

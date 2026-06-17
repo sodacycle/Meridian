@@ -128,7 +128,22 @@ QString FileOrganizer::rejectFile(const QString &filePath)
         } while (QFile::exists(destPath) && n < 1000);
     }
 
-    return QFile::rename(filePath, destPath) ? destPath : QString{};
+    if (!QFile::rename(filePath, destPath)) return {};
+    QFile::remove(filePath + ".mrj");
+    return destPath;
+}
+
+// - Write or remove a rejection sidecar (.mrj) alongside a FITS file -
+void FileOrganizer::writeSidecar(const QString &fitsPath, bool rejected)
+{
+    const QString sidecarPath = fitsPath + ".mrj";
+    if (rejected) {
+        QFile f(sidecarPath);
+        if (f.open(QIODevice::WriteOnly | QIODevice::Text))
+            f.write("{\"rejected\":true}");
+    } else {
+        QFile::remove(sidecarPath);
+    }
 }
 
 // - Remove empty directories recursively, avoiding the root working folder -
@@ -154,7 +169,7 @@ void FileOrganizer::removeEmptyRecursive(const QString &folder, const QString &r
 }
 
 // - Move identified stacked FITS files into a dedicated Stacked folder -
-void FileOrganizer::organizeStacked(const QString &dirPath)
+void FileOrganizer::organizeStacked(const QStringList &dirPaths)
 {
     if (m_running) return;
     m_running = true;
@@ -169,9 +184,10 @@ void FileOrganizer::organizeStacked(const QString &dirPath)
         watcher->deleteLater();
     });
 
-    QFuture<QVariantMap> future = QtConcurrent::run([this, dirPath]() -> QVariantMap {
+    QFuture<QVariantMap> future = QtConcurrent::run([this, dirPaths]() -> QVariantMap {
         QStringList stackedFiles;
-        findStackedFiles(dirPath, stackedFiles);
+        for (const QString &dir : dirPaths)
+            findStackedFiles(dir, stackedFiles);
         m_progressTotal = stackedFiles.size();
         m_progressCurrent = 0;
         emit progressChanged();
@@ -220,7 +236,7 @@ void FileOrganizer::organizeStacked(const QString &dirPath)
 }
 
 // - Scan for JPG files and return them as table rows via operationCompleted -
-void FileOrganizer::scanJpg(const QString &dirPath)
+void FileOrganizer::scanJpg(const QStringList &dirPaths)
 {
     if (m_running) return;
     m_running = true;
@@ -235,9 +251,10 @@ void FileOrganizer::scanJpg(const QString &dirPath)
         watcher->deleteLater();
     });
 
-    QFuture<QVariantMap> future = QtConcurrent::run([this, dirPath]() -> QVariantMap {
+    QFuture<QVariantMap> future = QtConcurrent::run([this, dirPaths]() -> QVariantMap {
         QStringList jpgFiles;
-        findJpgFiles(dirPath, jpgFiles);
+        for (const QString &dir : dirPaths)
+            findJpgFiles(dir, jpgFiles);
         m_progressTotal   = jpgFiles.size();
         m_progressCurrent = jpgFiles.size();
         m_statusText = QString("Found %1 JPG file(s).").arg(jpgFiles.size());
@@ -286,7 +303,7 @@ void FileOrganizer::scanJpg(const QString &dirPath)
 }
 
 // - Delete JPG files from the selected directory tree -
-void FileOrganizer::removeJpg(const QString &dirPath)
+void FileOrganizer::removeJpg(const QStringList &dirPaths)
 {
     if (m_running) return;
     m_running = true;
@@ -301,9 +318,10 @@ void FileOrganizer::removeJpg(const QString &dirPath)
         watcher->deleteLater();
     });
 
-    QFuture<QVariantMap> future = QtConcurrent::run([this, dirPath]() -> QVariantMap {
+    QFuture<QVariantMap> future = QtConcurrent::run([this, dirPaths]() -> QVariantMap {
         QStringList jpgFiles;
-        findJpgFiles(dirPath, jpgFiles);
+        for (const QString &dir : dirPaths)
+            findJpgFiles(dir, jpgFiles);
         m_progressTotal = jpgFiles.size();
         m_progressCurrent = 0;
         emit progressChanged();
@@ -338,7 +356,7 @@ void FileOrganizer::removeJpg(const QString &dirPath)
 }
 
 // - Prepare FITS files into Siril-friendly subfolders based on frame type -
-void FileOrganizer::sirilPrep(const QString &dirPath)
+void FileOrganizer::sirilPrep(const QStringList &dirPaths)
 {
     if (m_running) return;
     m_running = true;
@@ -353,9 +371,10 @@ void FileOrganizer::sirilPrep(const QString &dirPath)
         watcher->deleteLater();
     });
 
-    QFuture<QVariantMap> future = QtConcurrent::run([this, dirPath]() -> QVariantMap {
+    QFuture<QVariantMap> future = QtConcurrent::run([this, dirPaths]() -> QVariantMap {
         QStringList fitsFiles;
-        findFitsFiles(dirPath, fitsFiles);
+        for (const QString &dir : dirPaths)
+            findFitsFiles(dir, fitsFiles);
         m_progressTotal = fitsFiles.size();
         m_progressCurrent = 0;
         emit progressChanged();
@@ -405,8 +424,8 @@ void FileOrganizer::sirilPrep(const QString &dirPath)
             }
         }
 
-        // Write log
-        QString logPath = dirPath + "/sirilprep-log.txt";
+        // Write log into the first scan directory
+        QString logPath = dirPaths.first() + "/sirilprep-log.txt";
         QFile logFile(logPath);
         if (logFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
             logFile.write(logLines.join("\n").toUtf8());
@@ -427,7 +446,7 @@ void FileOrganizer::sirilPrep(const QString &dirPath)
 }
 
 // - Remove empty folders under the directory after file operations complete -
-void FileOrganizer::removeEmptyFolders(const QString &dirPath)
+void FileOrganizer::removeEmptyFolders(const QStringList &dirPaths)
 {
     if (m_running) return;
     m_running = true;
@@ -442,9 +461,12 @@ void FileOrganizer::removeEmptyFolders(const QString &dirPath)
         watcher->deleteLater();
     });
 
-    QFuture<QVariantMap> future = QtConcurrent::run([this, dirPath]() -> QVariantMap {
+    QFuture<QVariantMap> future = QtConcurrent::run([this, dirPaths]() -> QVariantMap {
         int deletedCount = 0;
-        removeEmptyRecursive(dirPath, dirPath, deletedCount);
+        for (const QString &dir : dirPaths) {
+            if (m_canceled.loadRelaxed()) break;
+            removeEmptyRecursive(dir, dir, deletedCount);
+        }
 
         if (m_canceled.loadRelaxed()) {
             m_canceled.storeRelaxed(0);

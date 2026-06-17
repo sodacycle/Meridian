@@ -9,7 +9,7 @@ Rectangle {
     border.width: 1
     radius: 6
 
-    property string directory: ""
+    property var    directories: []
     property bool   scanReady:   false
     property bool   jpgScanDone: false
     property int    jpgCount: 0
@@ -73,45 +73,45 @@ Rectangle {
                     Button {
                         width: mainRow.btnW
                         text: "Organize Stacked Files"
-                        enabled: root.scanReady && root.directory !== "" && !organizer.running
+                        enabled: root.scanReady && root.directories.length > 0 && !organizer.running
                         ToolTip.visible: hovered; ToolTip.delay: 500
                         ToolTip.text: "Move stacked FITS files (detected by header keywords\nor filename prefix) into a 'Stacked' subfolder."
                         onClicked: {
                             root.log("Organizing stacked files…")
-                            organizer.organizeStacked(root.directory)
+                            organizer.organizeStacked(root.directories)
                         }
                     }
                     Button {
                         width: mainRow.btnW
                         text: "Scan for .jpg Files"
-                        enabled: root.scanReady && root.directory !== "" && !organizer.running
+                        enabled: root.scanReady && root.directories.length > 0 && !organizer.running
                         ToolTip.visible: hovered; ToolTip.delay: 500
-                        ToolTip.text: "Search for JPG files in the selected directory.\nResults load into the File Details table below."
+                        ToolTip.text: "Search for JPG files in all scan folders.\nResults load into the File Details table below."
                         onClicked: {
                             root.log("Scanning for JPG files…")
-                            organizer.scanJpg(root.directory)
+                            organizer.scanJpg(root.directories)
                         }
                     }
                     Button {
                         width: mainRow.btnW
                         text: "Siril Prep"
-                        enabled: root.scanReady && root.directory !== "" && !organizer.running
+                        enabled: root.scanReady && root.directories.length > 0 && !organizer.running
                         ToolTip.visible: hovered; ToolTip.delay: 500
                         ToolTip.text: "Rename and arrange FITS files into the folder\nstructure expected by Siril for preprocessing."
                         onClicked: {
                             root.log("Running Siril prep…")
-                            organizer.sirilPrep(root.directory)
+                            organizer.sirilPrep(root.directories)
                         }
                     }
                     Button {
                         width: mainRow.btnW
                         text: "Remove Empty Folders"
-                        enabled: root.scanReady && root.directory !== "" && !organizer.running
+                        enabled: root.scanReady && root.directories.length > 0 && !organizer.running
                         ToolTip.visible: hovered; ToolTip.delay: 500
-                        ToolTip.text: "Delete any empty folders found within the\nselected directory tree."
+                        ToolTip.text: "Delete any empty folders found within all\nscan directory trees."
                         onClicked: {
                             root.log("Removing empty folders…")
-                            organizer.removeEmptyFolders(root.directory)
+                            organizer.removeEmptyFolders(root.directories)
                         }
                     }
                 }
@@ -238,7 +238,7 @@ Rectangle {
             width: 380
             Text {
                 width: parent.width
-                text: "Permanently delete " + root.jpgCount + " JPG file(s) from:\n" + root.directory
+                text: "Permanently delete " + root.jpgCount + " JPG file(s) from " + root.directories.length + " folder(s)."
                 color: window.sysPal.windowText
                 wrapMode: Text.WordWrap; font.pixelSize: 13
             }
@@ -250,7 +250,7 @@ Rectangle {
 
         onAccepted: {
             root.log("Deleting " + root.jpgCount + " JPG file(s)…")
-            organizer.removeJpg(root.directory)
+            organizer.removeJpg(root.directories)
         }
     }
 

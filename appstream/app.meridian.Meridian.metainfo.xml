@@ -55,6 +55,11 @@
   </keywords>
 
   <releases>
+    <release version="1.0.1a" date="2026-06-17">
+      <description>
+        <p>KIO worker bundled for native file dialog support in AppImage. Version bump to 1.0.1a.</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-06-05">
       <description>
         <p>Initial release.</p>

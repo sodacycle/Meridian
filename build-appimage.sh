@@ -207,6 +207,10 @@ _ensure_plugin "$QT_PLUGINS_DIR/tls/libqcertonlybackend.so" "$APPDIR/usr/plugins
 # SVG imageformat plugin — required to render .svg files via QQuickImage
 _ensure_plugin "$QT_PLUGINS_DIR/imageformats/libqsvg.so" "$APPDIR/usr/plugins/imageformats"
 
+# JPEG imageformat plugin — required to display .jpg/.jpeg files in the Image Viewer
+# linuxdeploy-plugin-qt routinely misses this on Qt6/Arch; libqjpeg.so pulls in libjpeg.so.8
+_ensure_plugin "$QT_PLUGINS_DIR/imageformats/libqjpeg.so" "$APPDIR/usr/plugins/imageformats"
+
 # XCB GL integrations — needed for hardware-accelerated OpenGL under XCB
 _ensure_plugin "$QT_PLUGINS_DIR/xcbglintegrations/libqxcb-glx-integration.so" \
                "$APPDIR/usr/plugins/xcbglintegrations"
@@ -233,6 +237,7 @@ while IFS= read -r -d '' _so; do
 done < <(find \
     "$APPDIR/usr/plugins/tls" \
     "$APPDIR/usr/plugins/xcbglintegrations" \
+    "$APPDIR/usr/plugins/imageformats" \
     "$APPDIR/usr/qml" \
     -name "*.so" -print0 2>/dev/null)
 
@@ -242,6 +247,37 @@ if [[ ${#PASS4_LIBS[@]} -gt 0 ]]; then
         --appdir="$APPDIR" \
         --executable="$APPDIR/usr/bin/$BINARY_NAME" \
         "${PASS4_LIBS[@]}" \
+        2>&1 | grep -v "Strip call failed\|relr\.dyn\|Unable to recognise\|deferred operations\|unsupported GNU_PROPERTY" || true
+fi
+
+# ── Pass 5: Bundle KIO workers required for the native file dialog ────────────
+# The KDE platform theme replaces QFileDialog with the KDE native dialog, which
+# uses KIO internally. Without the 'file' worker, opening any directory picker
+# fails with "Unknown protocol 'file'". KIO workers are Qt plugins resolved via
+# QT_PLUGIN_PATH/kf6/kio/, which AppRun already exports.
+info "Pass 5: bundling KIO workers..."
+mkdir -p "$APPDIR/usr/plugins/kf6/kio"
+
+KIO_WORKERS_NEEDED=(kio_file kio_trash)
+KIO_WORKER_LIBS=()
+for worker in "${KIO_WORKERS_NEEDED[@]}"; do
+    src="$QT_PLUGINS_DIR/kf6/kio/${worker}.so"
+    dst="$APPDIR/usr/plugins/kf6/kio/${worker}.so"
+    if [[ -f "$src" ]]; then
+        cp "$src" "$dst"
+        KIO_WORKER_LIBS+=("--library=$dst")
+        info "  bundled KIO worker: ${worker}.so"
+    else
+        warn "  KIO worker not found on system: ${worker}.so"
+    fi
+done
+
+if [[ ${#KIO_WORKER_LIBS[@]} -gt 0 ]]; then
+    info "  resolving deps for KIO workers..."
+    "$LINUXDEPLOY" \
+        --appdir="$APPDIR" \
+        --executable="$APPDIR/usr/bin/$BINARY_NAME" \
+        "${KIO_WORKER_LIBS[@]}" \
         2>&1 | grep -v "Strip call failed\|relr\.dyn\|Unable to recognise\|deferred operations\|unsupported GNU_PROPERTY" || true
 fi
 

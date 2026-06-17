@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QAtomicInt>
 
 // - Helper object for organizing FITS files, deleting JPGs, and preparing files for Siril -
@@ -22,13 +23,14 @@ public:
     int progressTotal() const;
     QString statusText() const;
 
-    Q_INVOKABLE void organizeStacked(const QString &dirPath);
-    Q_INVOKABLE void scanJpg(const QString &dirPath);
-    Q_INVOKABLE void removeJpg(const QString &dirPath);
-    Q_INVOKABLE void sirilPrep(const QString &dirPath);
-    Q_INVOKABLE void removeEmptyFolders(const QString &dirPath);
+    Q_INVOKABLE void organizeStacked(const QStringList &dirPaths);
+    Q_INVOKABLE void scanJpg(const QStringList &dirPaths);
+    Q_INVOKABLE void removeJpg(const QStringList &dirPaths);
+    Q_INVOKABLE void sirilPrep(const QStringList &dirPaths);
+    Q_INVOKABLE void removeEmptyFolders(const QStringList &dirPaths);
     Q_INVOKABLE bool deleteFile(const QString &filePath);
     Q_INVOKABLE QString rejectFile(const QString &filePath);
+    Q_INVOKABLE void writeSidecar(const QString &fitsPath, bool rejected);
     Q_INVOKABLE void cancel();
 
 signals:

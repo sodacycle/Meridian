@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     app.setApplicationName("Meridian");
-    app.setApplicationVersion("1.0.0");
+    app.setApplicationVersion("1.0.1a");
     app.setOrganizationName("Meridian");
     app.setOrganizationDomain("meridian.app");
 
@@ -88,11 +88,10 @@ int main(int argc, char *argv[])
         "Telescope", "Camera Model", "Sensor Temperature C", "RA", "DEC",
         "Latitude", "Longitude", "Binning", "Filter Used", "Gain",
         "Focal Length mm", "Aperture mm", "Focus Position", "Image Type",
-        "Stacking Software"
+        "Stacking Software", "Rejected"
     };
 
-    QObject::connect(&scanner, &FitsScanner::scanCompleted,
-        [&](const QVariantList &meta, const QVariantList &targets, const QVariantList &cals)
+    auto onScanData = [&](const QVariantList &meta, const QVariantList &targets, const QVariantList &cals)
         {
             metadataModel.setData(meta, columns);
             targetSummaryModel.setEntries(targets);
@@ -125,7 +124,10 @@ int main(int argc, char *argv[])
 
             if (!minDate.isEmpty())
                 weatherService.fetchWeatherForDateRange(minDate, maxDate);
-        });
+        };
+
+    QObject::connect(&scanner, &FitsScanner::scanCompleted,        &app, onScanData);
+    QObject::connect(&scanner, &FitsScanner::partialScanCompleted, &app, onScanData);
 
     // ── Locate main.qml in the embedded resource system ───────────────────────
     QUrl mainQml;

@@ -17,6 +17,9 @@ ApplicationWindow {
     property var    fullMetadataList:  []
     property bool   scanCompleted:     false
 
+    // Path auto-added by SeestarService so we can remove it on disconnect.
+    property string seestarAutoAddedPath: ""
+
     // ── Menu bar ─────────────────────────────────────────────────────────────
     menuBar: MenuBar {
 
@@ -25,23 +28,21 @@ ApplicationWindow {
             title: "&File"
 
             Action {
-                text: "Open Directory…"
+                text: "Add Folder…"
                 shortcut: "Ctrl+O"
                 onTriggered: {
                     var dir = scanner.selectDirectory()
-                    if (dir !== "") {
+                    if (dir !== "")
                         window.selectedDirectory = dir
-                        controlsPanel.setStatus("Directory selected. Ready to scan.")
-                    }
                 }
             }
             Action {
                 text: "Scan FITS Files"
                 shortcut: "Ctrl+Shift+S"
-                enabled: window.selectedDirectory !== "" && !scanner.running && !organizer.running
+                enabled: scanner.directories.length > 0 && !scanner.running && !organizer.running
                 onTriggered: {
                     controlsPanel.setStatus("")
-                    scanner.scanDirectory(window.selectedDirectory)
+                    scanner.scanDirectories()
                 }
             }
             MenuSeparator {}
@@ -97,29 +98,29 @@ ApplicationWindow {
 
                 Action {
                     text: "Organize Stacked Files"
-                    enabled: window.selectedDirectory !== "" && !scanner.running && !organizer.running
+                    enabled: scanner.directories.length > 0 && !scanner.running && !organizer.running
                     onTriggered: {
                         controlsPanel.advancedVisible = true
                         controlsPanel.logToConsole("Organizing stacked files…")
-                        organizer.organizeStacked(window.selectedDirectory)
+                        organizer.organizeStacked(scanner.directories)
                     }
                 }
                 Action {
                     text: "Siril Prep"
-                    enabled: window.selectedDirectory !== "" && !scanner.running && !organizer.running
+                    enabled: scanner.directories.length > 0 && !scanner.running && !organizer.running
                     onTriggered: {
                         controlsPanel.advancedVisible = true
                         controlsPanel.logToConsole("Running Siril prep…")
-                        organizer.sirilPrep(window.selectedDirectory)
+                        organizer.sirilPrep(scanner.directories)
                     }
                 }
                 Action {
                     text: "Remove Empty Folders"
-                    enabled: window.selectedDirectory !== "" && !scanner.running && !organizer.running
+                    enabled: scanner.directories.length > 0 && !scanner.running && !organizer.running
                     onTriggered: {
                         controlsPanel.advancedVisible = true
                         controlsPanel.logToConsole("Removing empty folders…")
-                        organizer.removeEmptyFolders(window.selectedDirectory)
+                        organizer.removeEmptyFolders(scanner.directories)
                     }
                 }
 
@@ -130,11 +131,11 @@ ApplicationWindow {
 
                     Action {
                         text: "Scan for JPG Files"
-                        enabled: window.selectedDirectory !== "" && !scanner.running && !organizer.running
+                        enabled: scanner.directories.length > 0 && !scanner.running && !organizer.running
                         onTriggered: {
                             controlsPanel.advancedVisible = true
                             controlsPanel.logToConsole("Scanning for JPG files…")
-                            organizer.scanJpg(window.selectedDirectory)
+                            organizer.scanJpg(scanner.directories)
                         }
                     }
                     MenuSeparator {}
@@ -277,7 +278,7 @@ ApplicationWindow {
             Text {
                 width: parent.width
                 text: "Permanently delete " + controlsPanel.jpgCount +
-                      " JPG file(s) from:\n" + window.selectedDirectory
+                      " JPG file(s) from " + scanner.directories.length + " folder(s)."
                 color: window.sysPal.windowText
                 wrapMode: Text.WordWrap; font.pixelSize: 13
             }
@@ -289,7 +290,7 @@ ApplicationWindow {
 
         onAccepted: {
             controlsPanel.logToConsole("Deleting " + controlsPanel.jpgCount + " JPG file(s)…")
-            organizer.removeJpg(window.selectedDirectory)
+            organizer.removeJpg(scanner.directories)
         }
     }
 
@@ -303,57 +304,6 @@ ApplicationWindow {
     // Expose palette to child QML via the window id so panels don't each
     // need their own SystemPalette object.
     readonly property SystemPalette sysPal: sysPalette
-
-    // ── Seestar status panel (top-right, fixed, never scrolls) ───────────────
-    Item {
-        id: seestarPanel
-        anchors { top: parent.top; right: parent.right }
-        width: 160
-        height: controlsPanel.height + 20
-        z: 1
-
-        Column {
-            anchors { top: parent.top; left: parent.left }
-            anchors.topMargin: 14
-            anchors.leftMargin: 10
-            spacing: 5
-
-            Row {
-                spacing: 3
-                Text { text: "Seestar Detected:"; font.pixelSize: 10; color: sysPalette.windowText }
-                Text {
-                    text: seestarService.connected ? "Yes" : "No"
-                    font.pixelSize: 10
-                    color: seestarService.connected ? "#66bb6a" : "#ef5350"
-                }
-            }
-            Row {
-                spacing: 3
-                Text { text: "Seestar Telescope Files:"; font.pixelSize: 10; color: sysPalette.windowText }
-                Text {
-                    text: !seestarService.connected ? "—"
-                          : seestarService.hasMyWorks ? "Found" : "Not-Found"
-                    font.pixelSize: 10
-                    color: !seestarService.connected ? sysPalette.placeholderText
-                           : seestarService.hasMyWorks ? "#66bb6a" : "#ef5350"
-                }
-            }
-            Row {
-                spacing: 3
-                Text { text: "Seestar Free Space:"; font.pixelSize: 10; color: sysPalette.windowText }
-                Text {
-                    readonly property double gb: seestarService.freeBytes / 1073741824
-                    text: !seestarService.connected ? "—" : gb.toFixed(1) + " GB"
-                    font.pixelSize: 10
-                    color: !seestarService.connected     ? sysPalette.placeholderText
-                           : gb >= 32.0                  ? "#66bb6a"
-                           : gb >= 12.0                  ? "#ffd54f"
-                           :                               "#ef5350"
-                }
-            }
-            Text { text: "Destination Directory: —";   font.pixelSize: 10; color: sysPalette.windowText }
-        }
-    }
 
     ScrollView {
         id: scrollView
@@ -369,10 +319,9 @@ ApplicationWindow {
 
             ControlsPanel {
                 id: controlsPanel
-                anchors.left:       parent.left
-                anchors.right:      parent.right
-                anchors.margins:    12
-                anchors.rightMargin: seestarPanel.width + 12
+                anchors.left:    parent.left
+                anchors.right:   parent.right
+                anchors.margins: 12
                 onJpgScanned: function(rows) {
                     fileDetailsView.allRows = rows
                 }
@@ -383,6 +332,75 @@ ApplicationWindow {
                     imagingCalendar.buildCalendar(window.fullMetadataList)
                 }
             }
+            // ── Seestar status panel ─────────────────────────────────────────
+            Rectangle {
+                anchors.left:    parent.left
+                anchors.right:   parent.right
+                anchors.margins: 12
+                height: seestarRow.implicitHeight + 20
+                color:        window.sysPal.base
+                border.color: window.sysPal.mid
+                border.width: 1
+                radius: 6
+
+                Row {
+                    id: seestarRow
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left:  parent.left
+                    anchors.leftMargin: 16
+                    spacing: 24
+
+                    Text {
+                        text: "Seestar"
+                        font.pixelSize: 13; font.bold: true
+                        color: window.sysPal.windowText
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Row {
+                        spacing: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        Text { text: "Detected:"; font.pixelSize: 12; color: window.sysPal.windowText; anchors.verticalCenter: parent.verticalCenter }
+                        Text {
+                            text: seestarService.connected ? "Yes" : "No"
+                            font.pixelSize: 12
+                            color: seestarService.connected ? "#66bb6a" : "#ef5350"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    Row {
+                        spacing: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        Text { text: "Telescope Files:"; font.pixelSize: 12; color: window.sysPal.windowText; anchors.verticalCenter: parent.verticalCenter }
+                        Text {
+                            text: !seestarService.connected ? "—"
+                                  : seestarService.hasMyWorks ? "Added to scan" : "Not Found"
+                            font.pixelSize: 12
+                            color: !seestarService.connected   ? window.sysPal.placeholderText
+                                   : seestarService.hasMyWorks ? "#66bb6a" : "#ef5350"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    Row {
+                        spacing: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        Text { text: "Free Space:"; font.pixelSize: 12; color: window.sysPal.windowText; anchors.verticalCenter: parent.verticalCenter }
+                        Text {
+                            readonly property double gb: seestarService.freeBytes / 1073741824
+                            text: !seestarService.connected ? "—" : gb.toFixed(1) + " GB"
+                            font.pixelSize: 12
+                            color: !seestarService.connected ? window.sysPal.placeholderText
+                                   : gb >= 32.0             ? "#66bb6a"
+                                   : gb >= 12.0             ? "#ffd54f"
+                                   :                          "#ef5350"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                }
+            }
+
             // Target Summary (fixed width, ends at Total Integration Time) sits
             // to the left; Catalog Breakdown fills the remaining space to its right.
             Item {
@@ -463,6 +481,37 @@ ApplicationWindow {
         transientParent:    window
         displayRows:        fileDetailsView.displayRows
         onRemoveRowRequested: function(path) { fileDetailsView.removeRow(path) }
+    }
+
+    // Check for an already-connected Seestar on startup — the initial poll()
+    // fires in the C++ constructor before QML Connections are wired up.
+    Component.onCompleted: {
+        if (seestarService.hasMyWorks) {
+            var myWorksPath = seestarService.mountPath + "/MyWorks"
+            if (scanner.directories.indexOf(myWorksPath) === -1) {
+                scanner.addDirectory(myWorksPath)
+                window.seestarAutoAddedPath = myWorksPath
+            }
+        }
+    }
+
+    // Auto-add/remove the Seestar MyWorks folder when the telescope connects.
+    Connections {
+        target: seestarService
+        function onConnectedChanged() {
+            var myWorksPath = seestarService.mountPath + "/MyWorks"
+            if (seestarService.hasMyWorks) {
+                if (scanner.directories.indexOf(myWorksPath) === -1) {
+                    scanner.addDirectory(myWorksPath)
+                    window.seestarAutoAddedPath = myWorksPath
+                }
+            } else {
+                var idx = scanner.directories.indexOf(window.seestarAutoAddedPath)
+                if (idx !== -1)
+                    scanner.removeDirectory(idx)
+                window.seestarAutoAddedPath = ""
+            }
+        }
     }
 
     Connections {

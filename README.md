@@ -8,16 +8,18 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 
 ## Features
 
-- **FITS File Scanner** — recursively scans a folder tree for `.fit` / `.fits` files, parses FITS headers, and builds a session database without copying any files. No Python or external tools required.
+- **Multi-Folder FITS Scanner** — add any number of root directories; all are scanned in one pass with partial results appearing as each folder finishes. No Python or external tools required.
+- **Image Rejection Persistence** — rejection marks are saved as `.mrj` sidecar files next to your FITS files so culling work survives app restarts. Pre-populated automatically on the next scan.
 - **Target Summary** — aggregates sessions by target object, showing total exposure time, sub counts, filters used, and equipment.
 - **Calibration Summary** — separate view for bias, dark, and flat frames grouped by type and settings, linked to each light-frame session.
 - **Imaging Calendar** — month-view calendar showing historical sessions overlaid with moon phase and weather data (cloud cover, humidity, temperature) fetched from the Open-Meteo API.
 - **Observation Planner** — computes tonight's (or any future night's) visible objects from your location. All astronomical math runs in C++ (Julian Date, GMST, LST, altitude, rise/set hour angles). Results are sorted by peak altitude and filtered by a configurable horizon limit.
 - **DSO Catalog** — built-in NGC/IC/Messier catalog with 13 000+ objects. Supports Seestar S50 mode (auto-filters to objects the smart telescope can reach).
+- **Seestar Integration** — status panel showing telescope connection, free space, and telescope file detection. When `MyWorks/` is found on the Seestar volume, it is automatically added to the scan directory list.
 - **Wikipedia Lookup** — fetches and parses infobox data for any catalog object directly from Wikipedia.
-- **FITS Image Viewer** — display and inspect individual FITS images with zoom, pan, asinh stretch, denoising, and an image rejection workflow.
+- **FITS Image Viewer** — display and inspect individual FITS images with zoom, pan, asinh stretch, denoising, image rejection workflow, and a scrollable thumbnail strip of every image viewed this session. Also opens `.jpg` / `.jpeg` preview files (stretch and denoise controls are hidden; rejection workflow not applicable).
 - **Catalog Breakdown** — organises your imaging history by catalog (Messier, NGC, IC, Caldwell, Sharpless, Barnard, LDN, LBN, Abell, PGC, UGC, and more).
-- **File Organiser** — batch tools for organising stacked files, scanning/deleting JPG previews, preparing Siril folder structures, and removing empty directories.
+- **File Organiser** — batch tools for organising stacked files, scanning/deleting JPG previews, preparing Siril folder structures, and removing empty directories — all operating across all scan directories simultaneously.
 - **Native system theme** — automatically matches your KDE Plasma or GTK desktop. Wayland native rendering is supported.
 
 ---
@@ -26,7 +28,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 
 ### FITS Image Viewer
 
-Click any file in the metadata table to open it in a dedicated dark-themed viewer. All processing is done locally in C++ — no external tools needed.
+Click any file in the metadata table to open it in a dedicated dark-themed viewer. Supports both FITS (`.fit` / `.fits`) and JPEG (`.jpg` / `.jpeg`) files. All processing is done locally in C++ — no external tools needed.
 
 **Navigation and zoom:**
 - Zoom in/out, fit-to-window, and 1:1 pixel-perfect viewing
@@ -41,9 +43,15 @@ Click any file in the metadata table to open it in a dedicated dark-themed viewe
 - **Live preview** — all adjustments apply in real time and persist across image navigation
 - **Reset button** — restore defaults (a=0.10, clip=99.0%, denoise=off) with one click
 
+**Thumbnail strip:**
+- Scrollable strip at the bottom of the image area showing every image viewed this session
+- Current image highlighted with a blue border; rejected images show a red dot
+- Click any thumbnail to jump directly to that image
+
 **Image quality workflow:**
-- **Reject / Unreject** — mark individual images as rejected with a visual red X overlay
-- **Finalize rejected images** — batch-move all rejected images to a dedicated folder without modifying FITS data
+- **Reject / Unreject** — mark individual images as rejected with a visual red X overlay; the mark is written to a `.mrj` sidecar file immediately so it survives a restart
+- **Persistence** — on the next scan, previously rejected images are pre-marked automatically
+- **Finalize rejected images** — batch-move all rejected images to a `rejected/` subfolder without modifying FITS data; sidecars are cleaned up automatically
 - **Live rejection counter** — shows how many images are currently marked
 
 **Safety and file management:**
@@ -79,6 +87,7 @@ The metadata table displays detailed information for every scanned FITS file:
 | Focus Position | Focuser position |
 | Image Type | Image type header |
 | Stacking Software | Software used for stacking |
+| Rejected | `true` if a `.mrj` rejection sidecar is present |
 
 **Filtering and navigation:**
 - **Target filter** — select a target to see all exposures of that object
@@ -148,7 +157,7 @@ Plans tonight's session or any future night from your location:
 
 ### Advanced File Organiser Tools
 
-Batch file operations accessible from the **Advanced Tools** panel:
+Batch file operations accessible from the **Advanced Tools** panel. All tools operate across **every directory in the current scan list** simultaneously.
 
 | Tool | Purpose |
 |---|---|

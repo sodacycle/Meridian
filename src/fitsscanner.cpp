@@ -43,7 +43,8 @@ QVariantMap MetadataEntry::toVariantMap() const
         {"Aperture mm", apertureMm},
         {"Focus Position", focusPosition},
         {"Image Type", imageType},
-        {"Stacking Software", stackingSoftware}
+        {"Stacking Software", stackingSoftware},
+        {"Rejected", rejected}
     };
 }
 
@@ -315,22 +316,177 @@ void FitsScanner::walkDirectory(const QString &dir, QList<MetadataEntry> &result
         entry.imageType = anyField(header, {"IMAGETYP", "IMTYPE"}, "Unknown");
         entry.stackingSoftware = anyField(header, {"CREATOR", "SOFTWARE", "STACKING_SOFTWARE"}, "Unknown");
 
+        if (QFileInfo::exists(info.absoluteFilePath() + ".mrj"))
+            entry.rejected = true;
+
         results.append(entry);
     }
 }
+
+QStringList FitsScanner::directories() const { return m_directories; }
+QString FitsScanner::currentScanDirectory() const { return m_currentScanDirectory; }
 
 QString FitsScanner::selectDirectory()
 {
     QString dir = QFileDialog::getExistingDirectory(nullptr,
         "Select Directory with FITS Files");
-    if (!dir.isEmpty()) {
-        m_statusText = "Directory selected. Ready to scan.";
-        emit progressChanged();
-    }
+    if (!dir.isEmpty())
+        addDirectory(dir);
     return dir;
 }
 
-// - Start an asynchronous scan of a FITS directory and publish the results to QML -
+void FitsScanner::addDirectory(const QString &path)
+{
+    if (path.isEmpty() || m_directories.contains(path)) return;
+    m_directories.append(path);
+    m_statusText = m_directories.size() == 1
+        ? "1 folder added. Ready to scan."
+        : QString("%1 folders added. Ready to scan.").arg(m_directories.size());
+    emit directoriesChanged();
+    emit progressChanged();
+}
+
+void FitsScanner::removeDirectory(int index)
+{
+    if (index < 0 || index >= m_directories.size()) return;
+    m_directories.removeAt(index);
+    emit directoriesChanged();
+}
+
+void FitsScanner::clearDirectories()
+{
+    if (m_directories.isEmpty()) return;
+    m_directories.clear();
+    emit directoriesChanged();
+}
+
+// - Aggregate a flat list of metadata entries into a complete ScanResult -
+ScanResult FitsScanner::aggregateEntries(const QList<MetadataEntry> &metadataList) const
+{
+    ScanResult result;
+    result.metadataList = metadataList;
+
+    QMap<QString, TargetSummaryEntry> targets;
+    for (const auto &e : metadataList) {
+        if (e.frameType != "LIGHT") continue;
+        QString name = e.target.isEmpty() ? "Unknown" : e.target;
+        auto &t = targets[name];
+        t.target = name;
+        t.fitsCount++;
+        if (!std::isnan(e.totalExposureTimeS) && e.totalExposureTimeS > 0) {
+            t.totalIntegrationTimeS += e.totalExposureTimeS;
+            t.filesWithExposure++;
+        }
+    }
+    for (auto &t : targets)
+        result.targetSummary.append(t);
+
+    QMap<QString, CalibrationSummaryEntry> calGroups;
+    QSet<QString> calTypes = {"DARK", "FLAT", "BIAS"};
+    for (const auto &e : metadataList) {
+        if (!calTypes.contains(e.frameType)) continue;
+        QString key = QString("%1|%2|%3|%4|%5")
+            .arg(e.frameType).arg(e.exposureTimeS)
+            .arg(e.gain).arg(e.binning).arg(e.sensorTemperatureC);
+        auto &c = calGroups[key];
+        c.frameType     = e.frameType;
+        c.exposureTimeS = e.exposureTimeS;
+        c.gain          = e.gain;
+        c.binning       = e.binning;
+        c.sensorTempC   = e.sensorTemperatureC;
+        c.count++;
+        if (e.startTimeUtc != "Unknown" && e.startTimeUtc > c.mostRecent)
+            c.mostRecent = e.startTimeUtc;
+    }
+    auto calList = calGroups.values();
+    QMap<QString, int> typeOrder = {{"DARK", 0}, {"FLAT", 1}, {"BIAS", 2}};
+    std::sort(calList.begin(), calList.end(), [&](const auto &a, const auto &b) {
+        return typeOrder.value(a.frameType, 9) < typeOrder.value(b.frameType, 9);
+    });
+    for (auto &c : calList) {
+        if (c.mostRecent.isEmpty()) c.mostRecent = "Unknown";
+        result.calibrationSummary.append(c);
+    }
+    return result;
+}
+
+// - Walk all paths, aggregate, and return — used by single-directory scan -
+ScanResult FitsScanner::buildScanResult(const QStringList &paths)
+{
+    QList<MetadataEntry> all;
+    m_statusText = "Scanning files...";
+    emit progressChanged();
+    for (const QString &path : paths) {
+        if (m_canceled.loadRelaxed()) break;
+        walkDirectory(path, all);
+    }
+    if (m_canceled.loadRelaxed()) {
+        m_canceled.storeRelaxed(0);
+        ScanResult r; r.canceled = true; return r;
+    }
+    m_statusText = "Aggregating data...";
+    emit progressChanged();
+    return aggregateEntries(all);
+}
+
+// - Scan all directories, emitting partial results after each one finishes -
+void FitsScanner::scanDirectories()
+{
+    if (m_running || m_directories.isEmpty()) return;
+    m_running = true;
+    m_canceled.storeRelaxed(0);
+    m_filesProcessed = 0;
+    emit runningChanged();
+
+    QStringList paths = m_directories;
+    auto *watcher = new QFutureWatcher<ScanResult>(this);
+    connect(watcher, &QFutureWatcher<ScanResult>::finished, this, [this, watcher]() {
+        onScanFinished(watcher);
+    });
+    watcher->setFuture(QtConcurrent::run([this, paths]() -> ScanResult {
+        QList<MetadataEntry> allEntries;
+
+        for (const QString &path : paths) {
+            if (m_canceled.loadRelaxed()) break;
+
+            QMetaObject::invokeMethod(this, [this, path]() {
+                m_currentScanDirectory = path;
+                emit currentScanDirectoryChanged();
+            }, Qt::QueuedConnection);
+
+            m_statusText = QString("Scanning %1...").arg(QFileInfo(path).fileName());
+            emit progressChanged();
+
+            walkDirectory(path, allEntries);
+
+            if (m_canceled.loadRelaxed()) break;
+
+            // Emit cumulative results so the UI updates as each folder finishes
+            ScanResult partial = aggregateEntries(allEntries);
+            QVariantList metaList, targetList, calList;
+            for (const auto &e : partial.metadataList)        metaList.append(e.toVariantMap());
+            for (const auto &e : partial.targetSummary)       targetList.append(e.toVariantMap());
+            for (const auto &e : partial.calibrationSummary)  calList.append(e.toVariantMap());
+            emit partialScanCompleted(metaList, targetList, calList);
+        }
+
+        QMetaObject::invokeMethod(this, [this]() {
+            m_currentScanDirectory.clear();
+            emit currentScanDirectoryChanged();
+        }, Qt::QueuedConnection);
+
+        if (m_canceled.loadRelaxed()) {
+            m_canceled.storeRelaxed(0);
+            ScanResult r; r.canceled = true; return r;
+        }
+
+        m_statusText = "Aggregating data...";
+        emit progressChanged();
+        return aggregateEntries(allEntries);
+    }));
+}
+
+// - Scan a single directory (kept for organizer compatibility) -
 void FitsScanner::scanDirectory(const QString &dirPath)
 {
     if (m_running) return;
@@ -341,102 +497,31 @@ void FitsScanner::scanDirectory(const QString &dirPath)
 
     auto *watcher = new QFutureWatcher<ScanResult>(this);
     connect(watcher, &QFutureWatcher<ScanResult>::finished, this, [this, watcher]() {
-        ScanResult result = watcher->result();
-        if (!result.error.isEmpty()) {
-            emit scanError(result.error);
-        } else {
-            QVariantList metaList, targetList, calList;
-            for (const auto &e : result.metadataList)
-                metaList.append(e.toVariantMap());
-            for (const auto &e : result.targetSummary)
-                targetList.append(e.toVariantMap());
-            for (const auto &e : result.calibrationSummary)
-                calList.append(e.toVariantMap());
-            emit scanCompleted(metaList, targetList, calList);
-        }
-        m_running = false;
-        emit runningChanged();
-        watcher->deleteLater();
+        onScanFinished(watcher);
     });
+    watcher->setFuture(QtConcurrent::run([this, dirPath]() -> ScanResult {
+        return buildScanResult({dirPath});
+    }));
+}
 
-    QFuture<ScanResult> future = QtConcurrent::run([this, dirPath]() -> ScanResult {
-        ScanResult result;
-
-        QList<MetadataEntry> metadataList;
-        m_statusText = "Scanning files...";
-        emit progressChanged();
-
-        walkDirectory(dirPath, metadataList);
-
-        if (m_canceled.loadRelaxed()) {
-            m_canceled.storeRelaxed(0);
-            result.canceled = true;
-            return result;
-        }
-
-        m_statusText = "Aggregating data...";
-        emit progressChanged();
-
-        // Build target summary (light frames only)
-        QMap<QString, TargetSummaryEntry> targets;
-        for (const auto &e : metadataList) {
-            if (e.frameType != "LIGHT") continue;
-            QString name = e.target.isEmpty() ? "Unknown" : e.target;
-            auto &t = targets[name];
-            t.target = name;
-            t.fitsCount++;
-            if (!std::isnan(e.totalExposureTimeS) && e.totalExposureTimeS > 0) {
-                t.totalIntegrationTimeS += e.totalExposureTimeS;
-                t.filesWithExposure++;
-            }
-        }
-
-        for (auto &t : targets)
-            result.targetSummary.append(t);
-
-        // Build calibration summary
-        QMap<QString, CalibrationSummaryEntry> calGroups;
-        QSet<QString> calTypes = {"DARK", "FLAT", "BIAS"};
-
-        for (const auto &e : metadataList) {
-            if (!calTypes.contains(e.frameType)) continue;
-
-            QString key = QString("%1|%2|%3|%4|%5")
-                .arg(e.frameType)
-                .arg(e.exposureTimeS)
-                .arg(e.gain)
-                .arg(e.binning)
-                .arg(e.sensorTemperatureC);
-
-            auto &c = calGroups[key];
-            c.frameType = e.frameType;
-            c.exposureTimeS = e.exposureTimeS;
-            c.gain = e.gain;
-            c.binning = e.binning;
-            c.sensorTempC = e.sensorTemperatureC;
-            c.count++;
-
-            if (e.startTimeUtc != "Unknown" && e.startTimeUtc > c.mostRecent)
-                c.mostRecent = e.startTimeUtc;
-        }
-
-        // Sort calibration: DARK, FLAT, BIAS
-        auto calList = calGroups.values();
-        QMap<QString, int> typeOrder = {{"DARK", 0}, {"FLAT", 1}, {"BIAS", 2}};
-        std::sort(calList.begin(), calList.end(), [&](const auto &a, const auto &b) {
-            return typeOrder.value(a.frameType, 9) < typeOrder.value(b.frameType, 9);
-        });
-
-        for (auto &c : calList) {
-            if (c.mostRecent.isEmpty()) c.mostRecent = "Unknown";
-            result.calibrationSummary.append(c);
-        }
-
-        result.metadataList = metadataList;
-        return result;
-    });
-
-    watcher->setFuture(future);
+void FitsScanner::onScanFinished(QFutureWatcher<ScanResult> *watcher)
+{
+    ScanResult result = watcher->result();
+    if (!result.error.isEmpty()) {
+        emit scanError(result.error);
+    } else if (!result.canceled) {
+        QVariantList metaList, targetList, calList;
+        for (const auto &e : result.metadataList)
+            metaList.append(e.toVariantMap());
+        for (const auto &e : result.targetSummary)
+            targetList.append(e.toVariantMap());
+        for (const auto &e : result.calibrationSummary)
+            calList.append(e.toVariantMap());
+        emit scanCompleted(metaList, targetList, calList);
+    }
+    m_running = false;
+    emit runningChanged();
+    watcher->deleteLater();
 }
 
 void FitsScanner::cancel()

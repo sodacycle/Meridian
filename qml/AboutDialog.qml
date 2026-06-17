@@ -22,7 +22,7 @@ Dialog {
             spacing: 12
 
             Image {
-                source: "qrc:/qt/qml/Meridian/resources/meridian.svg"
+                source: "qrc:/resources/meridian.svg"
                 width: 56; height: 56
                 fillMode: Image.PreserveAspectFit
                 smooth: true
@@ -47,7 +47,7 @@ Dialog {
                     Text {
                         id: versionLabel
                         anchors.centerIn: parent
-                        text: "v1.0 Beta"
+                        text: "v1.0.1a"
                         color: window.sysPal.highlightedText
                         font.pixelSize: 11; font.bold: true
                     }
@@ -114,7 +114,7 @@ Dialog {
                 anchors.verticalCenter: parent.verticalCenter
             }
             Text {
-                text: "<a href='https://github.com/sodacycle/FITS-Metadata-Viewer'>" +
+                text: "<a href='https://github.com/sodacycle/Meridian'>" +
                       "github.com/sodacycle/FITS-Metadata-Viewer</a>"
                 textFormat: Text.RichText
                 font.pixelSize: 12

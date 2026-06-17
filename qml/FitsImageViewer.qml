@@ -14,6 +14,10 @@ Window {
     property bool   isRejected: false
     property int    rejectedCount: 0
 
+    // Passed in from FitsViewerManager — drives the thumbnail strip.
+    property var viewedPaths: []
+    property var rejectedSet: ({})
+
     // Stretch / denoise parameters — persist across Prev/Next navigation.
     property real stretchA:    0.1
     property real stretchP:    99.0
@@ -24,6 +28,7 @@ Window {
     signal finalizeAccepted()
     signal requestPrevious()
     signal requestNext()
+    signal requestOpenPath(string path)
 
     function openFile(path) {
         filePath  = path
@@ -284,7 +289,7 @@ Window {
     // ── Image area ────────────────────────────────────────────────────────────
     Rectangle {
         id: imageArea
-        anchors.top: toolbar.bottom; anchors.bottom: footer.top
+        anchors.top: toolbar.bottom; anchors.bottom: thumbnailStrip.top
         anchors.left: sidePanel.right; anchors.right: parent.right
         color: "#111111"
         clip: true
@@ -369,6 +374,92 @@ Window {
                         horizontalAlignment: Text.AlignHCenter
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
+                }
+            }
+        }
+    }
+
+    // ── Thumbnail strip ───────────────────────────────────────────────────────
+    Rectangle {
+        id: thumbnailStrip
+        anchors.bottom: footer.top
+        anchors.left: sidePanel.right; anchors.right: parent.right
+        height: viewer.viewedPaths.length > 0 ? 90 : 0
+        color: "#161616"
+        clip: true
+
+        // Scroll to the current thumbnail whenever filePath changes.
+        onVisibleChanged: scrollToCurrent()
+        Connections {
+            target: viewer
+            function onFilePathChanged() { Qt.callLater(thumbnailStrip.scrollToCurrent) }
+        }
+
+        function scrollToCurrent() {
+            var idx = viewer.viewedPaths.indexOf(viewer.filePath)
+            if (idx >= 0 && thumbList.count > idx)
+                thumbList.positionViewAtIndex(idx, ListView.Contain)
+        }
+
+        ListView {
+            id: thumbList
+            anchors.fill: parent
+            anchors.margins: 4
+            orientation: ListView.Horizontal
+            spacing: 4
+            clip: true
+            model: viewer.viewedPaths
+
+            ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
+
+            delegate: Rectangle {
+                required property string modelData
+                required property int    index
+
+                width: 72
+                height: thumbList.height - 8
+                anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                radius: 3
+                clip: true
+                color:        modelData === viewer.filePath ? "#2a4a7a" : "#222222"
+                border.color: modelData === viewer.filePath ? "#5a90d0" : "#444444"
+                border.width: modelData === viewer.filePath ? 2 : 1
+
+                Image {
+                    anchors.fill: parent
+                    anchors.margins: border.width
+                    source: "image://fitsprovider/" + encodeURIComponent(modelData)
+                            + "?a=0.1&p=99.0&d=0"
+                    fillMode: Image.PreserveAspectCrop
+                    asynchronous: true
+                    cache: true
+
+                    BusyIndicator {
+                        anchors.centerIn: parent
+                        width: 20; height: 20
+                        running: parent.status === Image.Loading
+                    }
+                }
+
+                // Red dot overlay when rejected
+                Rectangle {
+                    visible: !!viewer.rejectedSet[modelData]
+                    anchors.top: parent.top; anchors.right: parent.right
+                    anchors.margins: 3
+                    width: 10; height: 10; radius: 5
+                    color: "#ee2020"
+                    border.color: "#ffffff"; border.width: 1
+                    z: 1
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: viewer.requestOpenPath(modelData)
+                    ToolTip.visible: containsMouse
+                    ToolTip.delay: 600
+                    ToolTip.text: modelData.split("/").pop()
+                    hoverEnabled: true
                 }
             }
         }
