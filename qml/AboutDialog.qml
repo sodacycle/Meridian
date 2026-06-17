@@ -115,7 +115,7 @@ Dialog {
             }
             Text {
                 text: "<a href='https://github.com/sodacycle/Meridian'>" +
-                      "github.com/sodacycle/FITS-Metadata-Viewer</a>"
+                      "github.com/sodacycle/Meridian</a>"
                 textFormat: Text.RichText
                 font.pixelSize: 12
                 color: window.sysPal.windowText
