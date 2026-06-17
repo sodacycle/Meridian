@@ -177,7 +177,7 @@ Pre-built AppImages for Linux are available on the [Releases page](https://githu
 
 | Platform | Download |
 |---|---|
-| Linux x86-64 | [Meridian-x86_64.AppImage](https://github.com/sodacycle/Meridian/releases/latest/download/Meridian-x86_64.AppImage) |
+| Linux x86-64 | [Meridian-x86_64.AppImage](https://github.com/sodacycle/Meridian/releases/download/1.0.1a/Meridian-x86_64.AppImage) |
 
 Download, make executable, and run — no Qt installation required:
 
