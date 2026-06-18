@@ -16,7 +16,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **Observation Planner** — computes tonight's (or any future night's) visible objects from your location. All astronomical math runs in C++ (Julian Date, GMST, LST, altitude, rise/set hour angles). Results are sorted by peak altitude and filtered by a configurable horizon limit.
 - **DSO Catalog** — built-in NGC/IC/Messier catalog with 13 000+ objects. Supports Seestar S50 mode (auto-filters to objects the smart telescope can reach).
 - **Seestar Integration** — status panel showing telescope connection, free space, and telescope file detection. When `MyWorks/` is found on the Seestar volume, it is automatically added to the scan directory list.
-- **Wikipedia Lookup** — fetches and parses infobox data for any catalog object directly from Wikipedia.
+- **Wikipedia Lookup** — fetches a thumbnail image and article summary for any catalog object directly from Wikipedia, displayed alongside the object stats in the Planner.
 - **FITS Image Viewer** — display and inspect individual FITS images with zoom, pan, asinh stretch, denoising, image rejection workflow, and a scrollable thumbnail strip of every image viewed this session. Also opens `.jpg` / `.jpeg` preview files (stretch and denoise controls are hidden; rejection workflow not applicable).
 - **Catalog Breakdown** — organises your imaging history by catalog (Messier, NGC, IC, Caldwell, Sharpless, Barnard, LDN, LBN, Abell, PGC, UGC, and more).
 - **File Organiser** — batch tools for organising stacked files, scanning/deleting JPG previews, preparing Siril folder structures, and removing empty directories — all operating across all scan directories simultaneously.
