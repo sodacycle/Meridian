@@ -250,9 +250,10 @@ double PlannerService::riseSetHAHours(double decDeg, double latDeg, double horiz
 
 void PlannerService::doCompute()
 {
-    // Reference point: 23:00 local time on the selected night (~local midnight).
+    // Reference point: local midnight (00:00) on the selected night.
+    // Together with kNightHalf = 6 this gives an 18:00–06:00 window.
     QDateTime localMidnight = QDateTime::currentDateTime();
-    localMidnight.setTime(QTime(23, 0, 0));
+    localMidnight.setTime(QTime(0, 0, 0));
     localMidnight = localMidnight.addDays(m_nightOffset);
 
     const double jdMid  = toJD(static_cast<double>(localMidnight.toMSecsSinceEpoch()));
@@ -263,10 +264,9 @@ void PlannerService::doCompute()
                            + utcMidTime.minute() / 60.0
                            + utcMidTime.second() / 3600.0;
 
-    // Observable night = midnight ± kNightHalf hours.
-    // Covers roughly 17:00–05:00 local solar time — a conservative darkness window
-    // valid for most latitudes and seasons. Prevents objects that only rise during
-    // the day from appearing in the list.
+    // Observable night = midnight ± kNightHalf hours = 18:00–06:00 local time.
+    // A conservative darkness window valid for most latitudes and seasons.
+    // Prevents objects that only rise during the day from appearing in the list.
     static constexpr double kNightHalf = 6.0;
 
     // Convert a target LST (degrees) to solar hours offset from midnight.
