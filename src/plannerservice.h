@@ -3,6 +3,7 @@
 #include <QAbstractListModel>
 #include <QList>
 #include <QString>
+#include <QVariant>
 #include "catalogservice.h"
 
 // ── PlannerEntry ─────────────────────────────────────────────────────────────
@@ -105,10 +106,16 @@ public:
     // Called from QML when location or night changes
     Q_INVOKABLE void compute(double lat, double lon, int nightOffset);
 
+    // Restrict the observable list to objects that pass through an enabled
+    // compass sector (8 booleans: N, NE, E, SE, S, SW, W, NW) while above
+    // minAltDeg during tonight's darkness window.  Pass enabled=false to clear.
+    Q_INVOKABLE void setViewFilter(const QVariantList &sectors, double minAltDeg, bool enabled);
+
     // Astronomical helpers — also called directly from QML Canvas drawing
     Q_INVOKABLE double toJD(double epochMs) const;
     Q_INVOKABLE double lst(double jd, double lonDeg) const;
     Q_INVOKABLE double altitudeDeg(double raH, double decDeg, double latDeg, double lstDeg) const;
+    Q_INVOKABLE double azimuthDeg(double raH, double decDeg, double latDeg, double lstDeg) const;
 
 signals:
     void readyChanged();
@@ -124,4 +131,9 @@ private:
     double m_lat        = 0.0;
     double m_lon        = 0.0;
     int    m_nightOffset = 0;
+
+    // Viewable-area list filter (mirrors the Sky Arc viewable-area controls).
+    bool        m_viewFilter  = false;
+    double      m_viewMinAlt  = 15.0;
+    QList<bool> m_viewSectors { true, true, true, true, true, true, true, true };
 };

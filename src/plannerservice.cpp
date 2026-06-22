@@ -167,6 +167,18 @@ void PlannerService::compute(double lat, double lon, int nightOffset)
         doCompute();
 }
 
+void PlannerService::setViewFilter(const QVariantList &sectors, double minAltDeg, bool enabled)
+{
+    m_viewFilter = enabled;
+    m_viewMinAlt = minAltDeg;
+    if (sectors.size() == 8) {
+        for (int i = 0; i < 8; ++i)
+            m_viewSectors[i] = sectors.at(i).toBool();
+    }
+    if (m_catalog->ready() && (m_lat != 0.0 || m_lon != 0.0))
+        doCompute();
+}
+
 // ── Astronomical math (ported from PlannerWindow.qml JS) ─────────────────────
 
 double PlannerService::toJD(double epochMs) const
@@ -200,6 +212,22 @@ double PlannerService::altitudeDeg(double raH, double decDeg, double latDeg, dou
     const double sinAlt = std::sin(lR) * std::sin(dR)
                         + std::cos(lR) * std::cos(dR) * std::cos(haR);
     return std::asin(std::max(-1.0, std::min(1.0, sinAlt))) / DEG2RAD;
+}
+
+double PlannerService::azimuthDeg(double raH, double decDeg, double latDeg, double lstDeg) const
+{
+    static constexpr double DEG2RAD = M_PI / 180.0;
+    const double ha  = std::fmod(std::fmod(lstDeg - raH * 15.0, 360.0) + 360.0, 360.0);
+    const double haR = ha  * DEG2RAD;
+    const double dR  = decDeg * DEG2RAD;
+    const double lR  = latDeg * DEG2RAD;
+    // Azimuth from South, positive to the West (Meeus); convert to compass
+    // bearing measured from North, increasing eastward, in [0, 360).
+    const double aSouth = std::atan2(std::sin(haR),
+                                     std::cos(haR) * std::sin(lR) - std::tan(dR) * std::cos(lR));
+    double az = aSouth / DEG2RAD + 180.0;
+    az = std::fmod(std::fmod(az, 360.0) + 360.0, 360.0);
+    return az;
 }
 
 double PlannerService::riseSetHAHours(double decDeg, double latDeg, double horizonDeg) const
@@ -309,6 +337,24 @@ void PlannerService::doCompute()
         }
 
         if (nightPeakAlt < 15.0) continue;  // clears latitude but not during this night
+
+        // ── Viewable-area filter ──────────────────────────────────────────────
+        // Keep the object only if, at some point during the darkness window, it
+        // sits in an enabled compass sector and above the obstruction floor.
+        if (m_viewFilter) {
+            const double floorDeg = std::max(15.0, m_viewMinAlt);
+            bool reachable = false;
+            for (double t = -kNightHalf; t <= kNightHalf + 1e-9; t += 0.25) {
+                const double lstT = lst(jdMid + t / 24.0, m_lon);
+                if (altitudeDeg(ce.raHours, ce.decDeg, m_lat, lstT) < floorDeg)
+                    continue;
+                const double azT = azimuthDeg(ce.raHours, ce.decDeg, m_lat, lstT);
+                const int idx = static_cast<int>(
+                    std::lround(std::fmod(std::fmod(azT, 360.0) + 360.0, 360.0) / 45.0)) % 8;
+                if (m_viewSectors.value(idx, true)) { reachable = true; break; }
+            }
+            if (!reachable) continue;
+        }
 
         // ── Build entry ───────────────────────────────────────────────────────
         PlannerEntry pe;

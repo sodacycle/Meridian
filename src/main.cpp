@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     app.setApplicationName("Meridian");
-    app.setApplicationVersion("1.0.1a");
+    app.setApplicationVersion("1.0.2a");
     app.setOrganizationName("Meridian");
     app.setOrganizationDomain("meridian.app");
 

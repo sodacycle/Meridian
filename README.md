@@ -13,7 +13,10 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **Target Summary** — aggregates sessions by target object, showing total exposure time, sub counts, filters used, and equipment.
 - **Calibration Summary** — separate view for bias, dark, and flat frames grouped by type and settings, linked to each light-frame session.
 - **Imaging Calendar** — month-view calendar showing historical sessions overlaid with moon phase and weather data (cloud cover, humidity, temperature) fetched from the Open-Meteo API.
-- **Observation Planner** — computes tonight's (or any future night's) visible objects from your location. All astronomical math runs in C++ (Julian Date, GMST, LST, altitude, rise/set hour angles). Results are sorted by peak altitude and filtered by a configurable horizon limit.
+- **Observation Planner** — computes tonight's (or any future night's) visible objects from your location. All astronomical math runs in C++ (Julian Date, GMST, LST, altitude, rise/set hour angles). Results are sorted by peak altitude and filtered by a configurable horizon limit. Includes a Sky Arc visualization, viewable-area compass sector filter, and a night scheduler with QSettings persistence.
+- **Light Pollution** — automatic Bortle class and SQM lookup from lightpollutionmap.info using GPS or FITS coordinates, displayed alongside the planner.
+- **Location Service** — GPS position via Qt Positioning with IP geolocation (ipinfo.io) fallback and city name display in the planner.
+- **Observation Scheduler** — per-night target scheduling with QSettings persistence; scheduled objects appear on the planner calendar.
 - **DSO Catalog** — built-in NGC/IC/Messier catalog with 13 000+ objects. Supports Seestar S50 mode (auto-filters to objects the smart telescope can reach).
 - **Seestar Integration** — status panel showing telescope connection, free space, and telescope file detection. When `MyWorks/` is found on the Seestar volume, it is automatically added to the scan directory list.
 - **Wikipedia Lookup** — fetches a thumbnail image and article summary for any catalog object directly from Wikipedia, displayed alongside the object stats in the Planner.
@@ -152,6 +155,9 @@ Plans tonight's session or any future night from your location:
 - Configurable minimum altitude horizon limit
 - Supports Seestar S50 mode to filter to objects within the smart telescope's capabilities
 - Night offset slider to plan sessions days ahead
+- **Sky Arc** — selecting an object draws its altitude curve across the night only (daylight excluded), stretched hour-by-hour from sunset to sunrise with twilight shading (astronomical / nautical / civil), rise/set and transit times with compass bearings, a compass strip showing the object's direction through the night, meridian crossing line with peak altitude, and a 15° planning limit marker
+- **UTC / AM-PM toggle** — switch every time in the planner (Observable Objects list, sky-arc axis and labels, recommended observation) between 24-hour UTC and the observing location's local 12-hour AM/PM clock
+- **Viewable area** — narrow the Sky Arc to the sky you can actually see by toggling the compass directions visible from your site (N/NE/E/SE/S/SW/W/NW, independently — so non-contiguous views and a fully blocked west are fine) plus a minimum-altitude floor; in-view portions of the arc are highlighted and out-of-view portions dimmed. Tick **Show only objects in my sky** to filter the Observable Objects list down to just the targets that actually rise into those directions tonight
 
 ---
 
@@ -195,7 +201,7 @@ chmod +x Meridian-x86_64.AppImage
 | Qt | 6.4 |
 | CMake | 3.16 |
 | C++ compiler | C++17 (GCC 10 / Clang 13 or later) |
-| Qt modules | Core, Widgets, Quick, QuickControls2, Network, Concurrent |
+| Qt modules | Core, Widgets, Quick, QuickControls2, Network, Concurrent, Positioning |
 
 ### Arch Linux / CachyOS
 
@@ -288,24 +294,36 @@ Meridian/
 │   ├── metadatamodel.*     Table and summary models
 │   ├── catalogservice.*    NGC/IC/Messier catalog loader
 │   ├── plannerservice.*    Observation planner + astronomical math
+│   ├── schedulerservice.*  Per-night observation scheduler
+│   ├── locationservice.*   GPS + IP geolocation
 │   ├── weatherservice.*    Open-Meteo weather fetcher
-│   └── wikiservice.*       Wikipedia infobox fetcher
+│   ├── lightpollutionservice.* Bortle/SQM lookup
+│   ├── wikiservice.*       Wikipedia infobox fetcher
+│   └── seestarservice.*    Seestar S50 USB mount detector
 ├── qml/                    QML/UI layer
 │   ├── main.qml
+│   ├── ControlsPanel.qml
+│   ├── AdvancedToolsPanel.qml
 │   ├── PlannerWindow.qml
 │   ├── ImagingCalendar.qml
 │   ├── TargetSummaryView.qml
 │   ├── CalibrationSummaryView.qml
-│   ├── FitsImageViewer.qml
 │   ├── CatalogBreakdown.qml
+│   ├── FileDetailsView.qml
+│   ├── FitsImageViewer.qml
+│   ├── FitsViewerManager.qml
+│   ├── AboutDialog.qml
 │   └── components/         Reusable QML sub-components
+│       └── ProgressIndicator.qml
 ├── appstream/              AppStream metadata
 ├── resources/              Icons and configuration
 │   ├── meridian.desktop
 │   └── meridian.svg
 ├── CMakeLists.txt
 ├── CMakePresets.json
-└── build-appimage.sh
+├── build.sh
+├── build-appimage.sh
+└── build-windows.ps1
 ```
 
 ---

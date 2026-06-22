@@ -18,6 +18,37 @@ Window {
 
     property int nightOffset: 0
     property var selectedObj: null
+
+    // Clock display for arc + list times: false = UTC (24-hour), true = the
+    // observing location's local time shown as 12-hour AM/PM. Session-only.
+    property bool clockLocal: false
+
+    // Viewable sky window for narrowing the planning scope (session-only).
+    // The sky is split into 8 compass sectors (N, NE, E, SE, S, SW, W, NW),
+    // each spanning 45°.  A sector is true when that direction is unobstructed
+    // from the observing site.  An object counts as "in view" when its azimuth
+    // falls in an enabled sector AND its altitude ≥ viewMinAlt.
+    property var  viewSectors: [true, true, true, true, true, true, true, true]
+    property real viewMinAlt:  15   // horizon-obstruction altitude floor
+    readonly property var  sectorNames: ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+    readonly property bool viewAreaActive: viewSectors.indexOf(false) >= 0 || viewMinAlt > 15
+
+    // When true, the Observable Objects list is restricted to objects that pass
+    // through an enabled sector above the altitude floor on the selected night.
+    property bool viewFilterEnabled: false
+
+    function toggleSector(i) {
+        var a = viewSectors.slice()
+        a[i] = !a[i]
+        viewSectors = a
+    }
+
+    function applyViewFilter() {
+        plannerService.setViewFilter(viewSectors, viewMinAlt, viewFilterEnabled)
+    }
+    onViewFilterEnabledChanged: applyViewFilter()
+    onViewSectorsChanged:       if (viewFilterEnabled) applyViewFilter()
+    onViewMinAltChanged:        if (viewFilterEnabled) applyViewFilter()
     property int weatherRevision: 0
     property int scheduleRevision: 0
     property bool showManualEntry: false
@@ -96,10 +127,15 @@ Window {
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     function localMidnightUTC() {
-        var d = new Date()
-        d.setHours(23, 0, 0, 0)
-        d.setDate(d.getDate() + nightOffset)
-        return d
+        // Anchor the sky-arc window to the observing location's local time,
+        // derived from its longitude — NOT the computer's timezone — so the
+        // timeframe is correct even when the PC clock is in a different zone.
+        // Local mean solar time = UTC + longitude/15  ⇒  UTC = local − lon/15.
+        var now = new Date()
+        var da  = now.getDate() + nightOffset
+        var ms  = Date.UTC(now.getFullYear(), now.getMonth(), da, 23, 0, 0)
+                  - (longitude / 15.0) * 3600000
+        return new Date(ms)
     }
 
     function nightLabel() {
@@ -143,12 +179,23 @@ Window {
         var h = Math.floor(wH), m = Math.round((wH - h) * 60)
         return h + "h" + (m > 0 ? " " + m + "m" : "")
     }
+    // Format a UTC hour-of-day per the selected clock mode.
+    // UTC  → 24-hour "HH:MM"   |   Local → 12-hour "H:MM AM/PM" (UTC + lon/15).
     function fmtHHMM(h) {
+        if (clockLocal) h += longitude / 15.0
         var hh = ((Math.floor(h) % 24) + 24) % 24
         var mm = Math.round((h - Math.floor(h)) * 60)
         if (mm === 60) { hh = (hh + 1) % 24; mm = 0 }
+        if (clockLocal) {
+            var ap  = hh < 12 ? "AM" : "PM"
+            var h12 = hh % 12; if (h12 === 0) h12 = 12
+            return h12 + ":" + (mm < 10 ? "0" : "") + mm + " " + ap
+        }
         return (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm
     }
+    // Suffix / short label for the active clock mode.
+    function clockSuffix() { return clockLocal ? "" : " UTC" }
+    function clockLabel()  { return clockLocal ? "Local" : "UTC" }
     function fmtViewableUTC(circ, riseH, setH) {
         if (circ) return "All night"
         if (riseH === 0 && setH === 0) return "—"
@@ -191,6 +238,31 @@ Window {
         return "#ef5350"
     }
 
+    // ── Cardinal direction / viewable-area helpers ────────────────────────────
+
+    // 16-point compass abbreviation for a bearing in degrees from North.
+    function compass16(az) {
+        var pts = ["N","NNE","NE","ENE","E","ESE","SE","SSE",
+                   "S","SSW","SW","WSW","W","WNW","NW","NNW"]
+        return pts[Math.round(((az % 360) + 360) % 360 / 22.5) % 16]
+    }
+
+    // Compass sector index (0=N, 1=NE, … 7=NW) for a bearing in degrees.
+    function sectorOf(az) {
+        return Math.round((((az % 360) + 360) % 360) / 45) % 8
+    }
+
+    // Is the sky in this bearing's direction marked as viewable?
+    function azInSweep(az) {
+        return viewSectors[sectorOf(az)] === true
+    }
+
+    // Object is observable from this site when its direction is unobstructed
+    // and it is above the obstruction altitude floor.
+    function inView(az, alt) {
+        return alt >= viewMinAlt && azInSweep(az)
+    }
+
     // ── Light pollution / observation time helpers ────────────────────────────
 
     function bortleColor(b) {
@@ -213,7 +285,7 @@ Window {
         var totalH = riseH < setH ? setH - riseH : setH + 24 - riseH
         var half   = Math.min(1.0, totalH / 2)
         var t      = transitHour(riseH, setH)
-        return fmtHHMM((t - half + 24) % 24) + " – " + fmtHHMM((t + half) % 24) + " UTC"
+        return fmtHHMM((t - half + 24) % 24) + " – " + fmtHHMM((t + half) % 24) + plannerWindow.clockSuffix()
     }
 
     function fmtRA(raH) {
@@ -882,7 +954,10 @@ Window {
             Item {
                 id: listPanel
                 anchors { top: parent.top; left: parent.left; bottom: parent.bottom }
-                width: parent.width * 0.55
+                // Never wider than the rightmost column: left margin (12) + the eight
+                // column widths (626) + room for the scrollbar (16).
+                readonly property int contentWidth: 12 + 626 + 16
+                width: Math.min(parent.width * 0.55, contentWidth)
 
                 // Title row: "Observable Objects" + search box on the right
                 Item {
@@ -943,6 +1018,38 @@ Window {
                             }
                         }
                     }
+
+                    // Clock display toggle: UTC (24h) vs the location's local AM/PM.
+                    Row {
+                        id: clockToggle
+                        anchors { right: searchBox.left; rightMargin: 10; verticalCenter: parent.verticalCenter }
+                        spacing: 0
+
+                        Repeater {
+                            model: [ { lbl: "UTC", loc: false }, { lbl: "AM/PM", loc: true } ]
+                            delegate: Rectangle {
+                                required property var modelData
+                                readonly property bool sel: plannerWindow.clockLocal === modelData.loc
+                                width: 46; height: 24; radius: 4
+                                color: sel ? pal.highlight
+                                           : Qt.rgba(pal.windowText.r, pal.windowText.g, pal.windowText.b, 0.06)
+                                border.color: sel ? pal.highlight : pal.mid
+                                border.width: 1
+
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: modelData.lbl
+                                    font.pixelSize: 10; font.bold: parent.sel
+                                    color: parent.sel ? pal.highlightedText : pal.windowText
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: plannerWindow.clockLocal = modelData.loc
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Column headers (clickable — click to sort, click again to reverse)
@@ -972,7 +1079,9 @@ Window {
                                 anchors { fill: parent; leftMargin: 6 }
                                 spacing: 3
                                 Text {
-                                    text: modelData.label
+                                    text: modelData.label === "UTC Visible"
+                                          ? (plannerWindow.clockLabel() + " Visible")
+                                          : modelData.label
                                     color: plannerWindow.sortCol === modelData.label
                                            ? pal.highlight : pal.windowText
                                     font.pixelSize: 11; font.bold: true
@@ -1176,23 +1285,31 @@ Window {
 
             Item {
                 anchors { top: parent.top; left: divider.right; right: parent.right; bottom: parent.bottom }
-                property var obj: plannerWindow.selectedObj
+                clip: true
 
-                Text {
-                    anchors.centerIn: parent
-                    text: "Select an object to see details"
-                    color: pal.placeholderText; font.pixelSize: 13
-                    visible: !parent.obj
-                }
+                // Scroll the whole detail panel (like the FITS viewer) so the Sky Arc
+                // keeps a usable minimum size on any window — scrollbars appear when the
+                // content is taller or wider than the available space.
+                Flickable {
+                    id: detailFlick
+                    anchors.fill: parent
+                    clip: true
+                    contentWidth:  Math.max(width,  detailColumn.width  + 36)
+                    contentHeight: Math.max(height, detailColumn.height + 36)
+                    boundsBehavior: Flickable.StopAtBounds
+                    ScrollBar.vertical:   ScrollBar { policy: ScrollBar.AsNeeded }
+                    ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                Column {
-                    anchors { fill: parent; margins: 18 }
-                    spacing: 12
-                    visible: !!parent.obj
-                    property var obj: parent.obj || {}
+                    Column {
+                        id: detailColumn
+                        x: 18; y: 18
+                        width: Math.max(detailFlick.width - 36, 360)   // minimum content width
+                        spacing: 12
+                        property var obj: plannerWindow.selectedObj || {}
 
                     Column {
                         spacing: 3
+                        visible: !!plannerWindow.selectedObj
                         Text {
                             text: {
                                 var o = parent.parent.obj
@@ -1215,23 +1332,25 @@ Window {
                         }
                     }
 
+                    Rectangle { width: parent.width; height: 1; color: pal.mid; visible: !!plannerWindow.selectedObj }
+
                     Rectangle {
                         width: typeLabel.implicitWidth + 16; height: 22; radius: 11
                         color: pal.highlight
+                        visible: !!plannerWindow.selectedObj
                         Text {
                             id: typeLabel
                             anchors.centerIn: parent
-                            text: (parent.parent.parent.obj && parent.parent.parent.obj.type) || ""
+                            text: (plannerWindow.selectedObj && plannerWindow.selectedObj.type) || ""
                             color: pal.highlightedText; font.pixelSize: 11; font.bold: true
                         }
                     }
-
-                    Rectangle { width: parent.width; height: 1; color: pal.mid }
 
                     // Stats + Wikipedia thumbnail side-by-side
                     Item {
                         width: parent.width
                         height: Math.max(statsGrid.implicitHeight, wikiThumb.visible ? wikiThumb.height : 0)
+                        visible: !!plannerWindow.selectedObj
                         property var obj: parent.obj
 
                         Grid {
@@ -1255,7 +1374,7 @@ Window {
                             Text { text: plannerWindow.fmtWindow(statsGrid.obj.circumpolar, statsGrid.obj.windowH)
                                    color: pal.windowText; font.pixelSize: 12 }
 
-                            Text { text: "UTC Visible";    color: pal.placeholderText; font.pixelSize: 12 }
+                            Text { text: plannerWindow.clockLabel() + " Visible"; color: pal.placeholderText; font.pixelSize: 12 }
                             Text { text: plannerWindow.fmtViewableUTC(statsGrid.obj.circumpolar,
                                              statsGrid.obj.riseUtcH, statsGrid.obj.setUtcH)
                                    color: pal.windowText; font.pixelSize: 12 }
@@ -1291,90 +1410,304 @@ Window {
                         }
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: pal.mid }
+                    Rectangle { width: parent.width; height: 1; color: pal.mid; visible: !!plannerWindow.selectedObj }
 
                     Text {
                         text: "Sky Arc  —  " + plannerWindow.nightLabel()
                         font.pixelSize: 12; color: pal.placeholderText
+                        visible: !!plannerWindow.selectedObj
                     }
 
                     Canvas {
                         id: skyCanvas
-                        width: parent.width
-                        height: Math.max(0, Math.min(200, topSection.height - 500))
+                        width: parent.width                 // ≥ 360 via detailColumn min width
+                        height: 240                         // fixed minimum; panel scrolls if needed
+                        visible: !!plannerWindow.selectedObj
+                        onVisibleChanged: if (visible) Qt.callLater(requestPaint)
 
-                        property var watchObj:   plannerWindow.selectedObj
-                        property int watchNight: plannerWindow.nightOffset
-                        property real watchLat:  plannerWindow.latitude
-                        property real watchLon:  plannerWindow.longitude
+                        property var watchObj:    plannerWindow.selectedObj
+                        property int watchNight:  plannerWindow.nightOffset
+                        property real watchLat:   plannerWindow.latitude
+                        property real watchLon:   plannerWindow.longitude
+                        property var  watchSectors: plannerWindow.viewSectors
+                        property real watchVMinAlt: plannerWindow.viewMinAlt
+                        property bool watchClock:   plannerWindow.clockLocal
 
-                        onWatchObjChanged:   Qt.callLater(requestPaint)
-                        onWatchNightChanged: Qt.callLater(requestPaint)
-                        onWatchLatChanged:   Qt.callLater(requestPaint)
-                        onWatchLonChanged:   Qt.callLater(requestPaint)
-                        onWidthChanged:      Qt.callLater(requestPaint)
-                        onHeightChanged:     Qt.callLater(requestPaint)
+                        onWatchObjChanged:     Qt.callLater(requestPaint)
+                        onWatchNightChanged:   Qt.callLater(requestPaint)
+                        onWatchLatChanged:     Qt.callLater(requestPaint)
+                        onWatchLonChanged:     Qt.callLater(requestPaint)
+                        onWatchSectorsChanged: Qt.callLater(requestPaint)
+                        onWatchVMinAltChanged: Qt.callLater(requestPaint)
+                        onWatchClockChanged:   Qt.callLater(requestPaint)
+                        onWidthChanged:        Qt.callLater(requestPaint)
+                        onHeightChanged:       Qt.callLater(requestPaint)
 
                         onPaint: {
-                            var ctx2d = getContext("2d")
-                            ctx2d.clearRect(0, 0, width, height)
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, width, height)
 
                             var o = plannerWindow.selectedObj
                             if (!o || !plannerWindow.hasLocation || height < 40) return
 
-                            var cx = width / 2
-                            var cy = height - 14
-                            var r  = cy - 4
-
-                            ctx2d.strokeStyle = pal.mid.toString()
-                            ctx2d.lineWidth = 1; ctx2d.setLineDash([])
-                            ctx2d.beginPath(); ctx2d.moveTo(0, cy); ctx2d.lineTo(width, cy); ctx2d.stroke()
-
-                            ctx2d.setLineDash([2, 4]); ctx2d.lineWidth = 0.5
-                            ctx2d.font = "10px sans-serif"
-                            ctx2d.fillStyle = pal.placeholderText.toString()
-                            ctx2d.textAlign = "left"
-                            for (var alt = 30; alt <= 80; alt += 30) {
-                                var ytick = cy - (alt / 90.0) * r
-                                ctx2d.strokeStyle = pal.mid.toString()
-                                ctx2d.beginPath(); ctx2d.moveTo(24, ytick); ctx2d.lineTo(width, ytick); ctx2d.stroke()
-                                ctx2d.fillText(alt + "°", 2, ytick + 4)
-                            }
-                            ctx2d.setLineDash([])
-
-                            ctx2d.fillStyle = pal.placeholderText.toString()
-                            ctx2d.textAlign = "center"; ctx2d.font = "10px sans-serif"
-                            ctx2d.fillText("−6h", cx - r / 2, cy + 12)
-                            ctx2d.fillText("midnight", cx, cy + 12)
-                            ctx2d.fillText("+6h", cx + r / 2, cy + 12)
+                            var lat  = plannerWindow.latitude
+                            var lon  = plannerWindow.longitude
+                            var padL = 26, padR = 8
+                            var stripH = 13                         // compass strip under the axis
+                            var cy   = height - 16 - stripH
+                            var rTop = cy - 4                       // pixels for 0°→90° altitude
+                            var plotW = Math.max(1, width - padL - padR)
 
                             var midnight = plannerWindow.localMidnightUTC()
-                            var jdMid   = plannerService.toJD(midnight.getTime())
-                            var lstMid  = plannerService.lst(jdMid, plannerWindow.longitude)
+                            var jdMid    = plannerService.toJD(midnight.getTime())
+                            var lstMid   = plannerService.lst(jdMid, lon)
 
-                            ctx2d.beginPath()
-                            var started = false
-                            for (var step = 0; step <= 96; step++) {
-                                var h = -12.0 + step * 0.25
-                                var jd = jdMid + h / 24.0
-                                var lstH = plannerService.lst(jd, plannerWindow.longitude)
-                                var altH = plannerService.altitudeDeg(o.raHours, o.decDeg, plannerWindow.latitude, lstH)
-                                var px = cx + (h / 12.0) * r
-                                var py = cy - (altH / 90.0) * r
-                                if (altH < 15.0) { started = false; continue }
-                                if (!started) { ctx2d.moveTo(px, py); started = true }
-                                else ctx2d.lineTo(px, py)
+                            // Approximate sun altitude at a given JD (±1° accuracy)
+                            function sunAlt(jd) {
+                                var T   = (jd - 2451545.0) / 36525.0
+                                var M   = (357.52911 + 35999.05029 * T) * Math.PI / 180
+                                var lam = (280.46646 + 36000.76983 * T
+                                           + (1.914602 - 0.004817 * T) * Math.sin(M)
+                                           + 0.019993 * Math.sin(2 * M)) * Math.PI / 180
+                                var eps = (23.439291 - 0.013004 * T) * Math.PI / 180
+                                var raH = (Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam))
+                                           * 180 / Math.PI / 15 + 24) % 24
+                                var dec = Math.asin(Math.sin(eps) * Math.sin(lam)) * 180 / Math.PI
+                                return plannerService.altitudeDeg(raH, dec, lat, plannerService.lst(jd, lon))
                             }
-                            ctx2d.strokeStyle = pal.highlight.toString()
-                            ctx2d.lineWidth = 2.5; ctx2d.stroke()
 
-                            var altMid = plannerService.altitudeDeg(o.raHours, o.decDeg, plannerWindow.latitude, lstMid)
-                            if (altMid >= 15.0) {
-                                var dotY = cy - (altMid / 90.0) * r
-                                ctx2d.fillStyle = pal.highlight.toString()
-                                ctx2d.beginPath(); ctx2d.arc(cx, dotY, 4, 0, 2 * Math.PI); ctx2d.fill()
+                            // UTC time string from hour offset around midnight
+                            // Clock label for an hour offset around the reference midnight,
+                            // honouring the UTC / local-AM·PM toggle.
+                            function toUTC(h) {
+                                var t = new Date(midnight.getTime() + h * 3600000)
+                                var utcH = t.getUTCHours() + t.getUTCMinutes() / 60.0
+                                         + t.getUTCSeconds() / 3600.0
+                                return plannerWindow.fmtHHMM(utcH)
+                            }
+
+                            // Object altitude / azimuth at an hour offset around midnight
+                            function altAt(h) {
+                                return plannerService.altitudeDeg(o.raHours, o.decDeg, lat,
+                                                                  plannerService.lst(jdMid + h / 24.0, lon))
+                            }
+                            function azAt(h) {
+                                return plannerService.azimuthDeg(o.raHours, o.decDeg, lat,
+                                                                 plannerService.lst(jdMid + h / 24.0, lon))
+                            }
+
+                            // ── Night window: sun below horizon, bracketing local midnight ─
+                            // Daylight is excluded; the night is stretched across the canvas.
+                            var hStart = -12, hEnd = 12
+                            if (sunAlt(jdMid) < 0) {
+                                for (var hb = 0; hb >= -12; hb -= 0.05)
+                                    if (sunAlt(jdMid + hb / 24.0) >= 0) { hStart = hb; break }
+                                for (var hf = 0; hf <= 12; hf += 0.05)
+                                    if (sunAlt(jdMid + hf / 24.0) >= 0) { hEnd = hf; break }
+                            }
+                            if (hEnd - hStart < 0.5) { hStart = -12; hEnd = 12 }   // polar day fallback
+                            var span = hEnd - hStart
+                            function xOf(h) { return padL + (h - hStart) / span * plotW }
+
+                            // ── Twilight shading ──────────────────────────────────────────
+                            var nSh = Math.max(48, Math.round(plotW / 2))
+                            for (var s = 0; s < nSh; s++) {
+                                var hA = hStart + span * s / nSh
+                                var hB = hStart + span * (s + 1) / nSh
+                                var sa = sunAlt(jdMid + (hA + hB) / 2 / 24.0)
+                                var col = null
+                                if      (sa >= 0)   col = "rgba(160,110,50,0.20)"
+                                else if (sa >= -6)  col = "rgba(160,100,40,0.13)"
+                                else if (sa >= -12) col = "rgba(60,80,140,0.10)"
+                                else if (sa >= -18) col = "rgba(30,50,100,0.07)"
+                                if (col) { ctx.fillStyle = col; ctx.fillRect(xOf(hA), 0, xOf(hB) - xOf(hA) + 0.5, cy) }
+                            }
+
+                            // ── Viewable-area shading ─────────────────────────────────────
+                            // Dim the times the object's azimuth falls outside the sweep, and
+                            // the altitude band below the horizon-obstruction floor.
+                            if (plannerWindow.viewSectors.indexOf(false) >= 0) {
+                                for (var sv = 0; sv < nSh; sv++) {
+                                    var hAz = hStart + span * (sv + 0.5) / nSh
+                                    if (!plannerWindow.azInSweep(azAt(hAz))) {
+                                        ctx.fillStyle = "rgba(150,90,90,0.11)"
+                                        ctx.fillRect(xOf(hStart + span * sv / nSh), 0,
+                                                     plotW / nSh + 0.5, cy)
+                                    }
+                                }
+                            }
+                            if (plannerWindow.viewMinAlt > 15) {
+                                var yFloorBand = cy - (plannerWindow.viewMinAlt / 90.0) * rTop
+                                ctx.fillStyle = "rgba(150,90,90,0.09)"
+                                ctx.fillRect(padL, yFloorBand, plotW, cy - yFloorBand)
+                            }
+
+                            // ── Horizon baseline ──────────────────────────────────────────
+                            ctx.strokeStyle = pal.mid.toString()
+                            ctx.lineWidth = 1; ctx.setLineDash([])
+                            ctx.beginPath(); ctx.moveTo(padL, cy); ctx.lineTo(width - padR, cy); ctx.stroke()
+
+                            // ── Altitude grid lines ───────────────────────────────────────
+                            ctx.font = "10px sans-serif"
+                            ctx.fillStyle = pal.placeholderText.toString()
+                            ctx.textAlign = "left"
+
+                            // 15° planning limit
+                            var y15 = cy - (15.0 / 90.0) * rTop
+                            ctx.strokeStyle = pal.mid.toString()
+                            ctx.setLineDash([2, 6]); ctx.lineWidth = 0.5
+                            ctx.beginPath(); ctx.moveTo(padL, y15); ctx.lineTo(width - padR, y15); ctx.stroke()
+                            ctx.fillText("15°", 2, y15 + 4)
+
+                            for (var alt = 30; alt <= 80; alt += 30) {
+                                var ytick = cy - (alt / 90.0) * rTop
+                                ctx.setLineDash([2, 4]); ctx.lineWidth = 0.5
+                                ctx.strokeStyle = pal.mid.toString()
+                                ctx.beginPath(); ctx.moveTo(padL, ytick); ctx.lineTo(width - padR, ytick); ctx.stroke()
+                                ctx.fillText(alt + "°", 2, ytick + 4)
+                            }
+                            ctx.setLineDash([])
+
+                            // ── Viewable min-altitude floor line ──────────────────────────
+                            if (plannerWindow.viewMinAlt > 15) {
+                                var yFl = cy - (plannerWindow.viewMinAlt / 90.0) * rTop
+                                ctx.strokeStyle = "rgba(210,130,130,0.9)"
+                                ctx.setLineDash([4, 4]); ctx.lineWidth = 1
+                                ctx.beginPath(); ctx.moveTo(padL, yFl); ctx.lineTo(width - padR, yFl); ctx.stroke()
+                                ctx.setLineDash([])
+                                ctx.fillStyle = pal.placeholderText.toString(); ctx.textAlign = "left"
+                                ctx.fillText(plannerWindow.viewMinAlt.toFixed(0) + "°", 2, yFl - 2)
+                            }
+
+                            // ── Hourly grid + time axis labels ────────────────────────────
+                            ctx.fillStyle = pal.placeholderText.toString()
+                            ctx.font = "10px sans-serif"
+                            var hStep  = span > 14 ? 2 : 1
+                            var firstH = Math.ceil(hStart), lastH = Math.floor(hEnd)
+                            for (var hh = firstH; hh <= lastH; hh += hStep) {
+                                var hx = xOf(hh)
+                                ctx.strokeStyle = pal.mid.toString()
+                                ctx.setLineDash([2, 5]); ctx.lineWidth = 0.5
+                                ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, cy); ctx.stroke()
+                                ctx.setLineDash([])
+                                ctx.textAlign = (hh === firstH) ? "left" : (hh === lastH ? "right" : "center")
+                                ctx.fillText(toUTC(hh), hx, cy + 11)
+                            }
+
+                            // ── Compass strip: object bearing through the night ───────────
+                            ctx.font = "9px sans-serif"
+                            ctx.textAlign = "center"
+                            for (var hc = firstH; hc <= lastH; hc += hStep) {
+                                var altc = altAt(hc)
+                                if (altc < 0) continue                 // below horizon — nothing to point at
+                                var azc = azAt(hc)
+                                ctx.fillStyle = plannerWindow.inView(azc, altc) ? pal.highlight.toString()
+                                                                               : pal.placeholderText.toString()
+                                ctx.fillText(plannerWindow.compass16(azc), xOf(hc), cy + 24)
+                            }
+
+                            // ── Meridian crossing ─────────────────────────────────────────
+                            // Transit when HA = 0 → LST = RA; use sidereal rate ≈ 15°/hr
+                            var dLST      = ((o.raHours * 15.0 - lstMid) % 360 + 360) % 360
+                            if (dLST > 180) dLST -= 360
+                            var hTransit   = dLST / 15.0
+                            var showTransit = hTransit >= hStart && hTransit <= hEnd
+                            var pxTransit  = xOf(hTransit)
+                            var altTransit = -999
+                            if (showTransit) {
+                                altTransit = altAt(hTransit)
+                                if (altTransit >= 15) {
+                                    ctx.strokeStyle = pal.mid.toString()
+                                    ctx.setLineDash([3, 5]); ctx.lineWidth = 1
+                                    ctx.beginPath()
+                                    ctx.moveTo(pxTransit, 0); ctx.lineTo(pxTransit, cy)
+                                    ctx.stroke(); ctx.setLineDash([])
+                                }
+                            }
+
+                            // ── Object arc (night only, segmented by in-view) ─────────────
+                            // Solid highlight where the object is inside the viewable area,
+                            // dimmed where its azimuth/altitude falls outside it.
+                            var riseX = -1, riseH = 0
+                            var setX  = -1, setH  = 0
+                            var prevAlt = null, prevPx = null, prevPy = null, prevH = null
+                            var nArc = 180
+                            var hiCol  = pal.highlight.toString()
+                            var dimCol = pal.placeholderText.toString()
+
+                            for (var step = 0; step <= nArc; step++) {
+                                var h    = hStart + span * step / nArc
+                                var altH = altAt(h)
+                                var px   = xOf(h)
+                                var py   = cy - (altH / 90.0) * rTop
+
+                                if (prevAlt !== null) {
+                                    // rise/set crossings at the 15° planning limit
+                                    if (prevAlt < 15.0 && altH >= 15.0) {
+                                        var fR = (15.0 - prevAlt) / (altH - prevAlt)
+                                        riseX = prevPx + fR * (px - prevPx)
+                                        riseH = prevH  + fR * (h - prevH)
+                                    } else if (prevAlt >= 15.0 && altH < 15.0) {
+                                        var fS = (prevAlt - 15.0) / (prevAlt - altH)
+                                        setX = prevPx + fS * (px - prevPx)
+                                        setH = prevH  + fS * (h - prevH)
+                                    }
+                                    // draw the segment only where both ends clear the limit
+                                    if (prevAlt >= 15.0 && altH >= 15.0) {
+                                        var inv = plannerWindow.inView(azAt(h), altH)
+                                        ctx.beginPath()
+                                        ctx.moveTo(prevPx, prevPy); ctx.lineTo(px, py)
+                                        ctx.strokeStyle = inv ? hiCol : dimCol
+                                        ctx.lineWidth   = inv ? 2.5 : 1.3
+                                        ctx.stroke()
+                                    }
+                                }
+                                prevAlt = altH; prevPx = px; prevPy = py; prevH = h
+                            }
+
+                            // ── Midnight dot ──────────────────────────────────────────────
+                            var altMid = altAt(0)
+                            if (altMid >= 15.0 && hStart <= 0 && hEnd >= 0) {
+                                ctx.fillStyle = plannerWindow.inView(azAt(0), altMid) ? hiCol : dimCol
+                                ctx.beginPath()
+                                ctx.arc(xOf(0), cy - (altMid / 90.0) * rTop, 4, 0, 2 * Math.PI)
+                                ctx.fill()
+                            }
+
+                            // ── Transit / peak annotation (with bearing) ──────────────────
+                            if (showTransit && altTransit >= 15) {
+                                var pyTransit = cy - (altTransit / 90.0) * rTop
+                                ctx.font = "10px sans-serif"
+                                ctx.fillStyle = pal.placeholderText.toString()
+                                ctx.textAlign = "center"
+                                ctx.fillText(altTransit.toFixed(0) + "°  ·  " + toUTC(hTransit)
+                                             + "  " + plannerWindow.compass16(azAt(hTransit)),
+                                             pxTransit, Math.max(pyTransit - 7, 11))
+                            }
+
+                            // ── Rise / set annotations (with bearing) ─────────────────────
+                            ctx.font = "10px sans-serif"
+                            ctx.fillStyle = pal.placeholderText.toString()
+                            if (riseX >= 0) {
+                                ctx.textAlign = riseX < padL + plotW * 0.2 ? "left" : "center"
+                                ctx.fillText("▲ " + toUTC(riseH) + " " + plannerWindow.compass16(azAt(riseH)),
+                                             Math.max(riseX, padL), cy - 5)
+                            }
+                            if (setX >= 0) {
+                                ctx.textAlign = setX > padL + plotW * 0.8 ? "right" : "center"
+                                ctx.fillText("▼ " + toUTC(setH) + " " + plannerWindow.compass16(azAt(setH)),
+                                             Math.min(setX, width - padR), cy - 5)
                             }
                         }
+                    }
+
+                    // Placeholder shown in the object area until something is selected.
+                    Text {
+                        width: parent.width
+                        text: "Select an object to see its sky arc and details."
+                        color: pal.placeholderText; font.pixelSize: 13
+                        wrapMode: Text.WordWrap
+                        visible: !plannerWindow.selectedObj
                     }
 
                     // ── Bottom info row: light pollution + recommended time ────
@@ -1483,7 +1816,8 @@ Window {
                                             if (o.circumpolar) return "All night"
                                             if (o.riseUtcH === 0 && o.setUtcH === 0) return "—"
                                             return plannerWindow.fmtHHMM(
-                                                plannerWindow.transitHour(o.riseUtcH, o.setUtcH)) + " UTC"
+                                                plannerWindow.transitHour(o.riseUtcH, o.setUtcH))
+                                                + plannerWindow.clockSuffix()
                                         }
                                     }
 
@@ -1511,6 +1845,106 @@ Window {
                             }
                         }
                     }
+
+                    // ── Viewable-area controls: narrow the planning scope ─────────
+                    // Always visible (independent of the selected object), shown below
+                    // the light-pollution panel: toggle the compass directions you can
+                    // see, set the obstruction floor, and optionally filter the list.
+                    Rectangle { width: parent.width; height: 1; color: pal.mid }
+
+                    Column {
+                        width: parent.width
+                        spacing: 6
+                        property real fieldH: 26
+
+                        function clampAlt(v) { v = parseFloat(v); return isNaN(v) ? 15 : Math.max(0, Math.min(90, v)) }
+
+                        Text {
+                            text: "Viewable sky — tap the directions you can see"
+                            font.pixelSize: 11; font.bold: true; color: pal.placeholderText
+                        }
+
+                        Row {
+                            spacing: 4
+
+                            Repeater {
+                                model: plannerWindow.sectorNames
+                                delegate: Rectangle {
+                                    required property int index
+                                    required property string modelData
+                                    readonly property bool on: plannerWindow.viewSectors[index] === true
+
+                                    width: 38; height: 26; radius: 4
+                                    color: on ? pal.highlight
+                                              : Qt.rgba(pal.windowText.r, pal.windowText.g, pal.windowText.b, 0.06)
+                                    border.color: on ? pal.highlight : pal.mid
+                                    border.width: 1
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: modelData
+                                        font.pixelSize: 11
+                                        font.bold: parent.on
+                                        color: parent.on ? pal.highlightedText : pal.windowText
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: plannerWindow.toggleSector(index)
+                                    }
+                                }
+                            }
+                        }
+
+                        Row {
+                            spacing: 8
+
+                            Text {
+                                text: "Min altitude ≥"
+                                font.pixelSize: 11; color: pal.windowText
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                            TextField {
+                                id: altMinField
+                                width: 46; implicitHeight: parent.parent.fieldH
+                                font.pixelSize: 11; selectByMouse: true
+                                inputMethodHints: Qt.ImhFormattedNumbersOnly
+                                text: Math.round(plannerWindow.viewMinAlt).toString()
+                                onEditingFinished: plannerWindow.viewMinAlt = parent.parent.clampAlt(text)
+                            }
+                            Text {
+                                text: "°  (trees, buildings)"
+                                font.pixelSize: 11; color: pal.placeholderText
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+                        }
+
+                        Row {
+                            spacing: 12
+
+                            CheckBox {
+                                id: skyFilterCheck
+                                text: "Show only objects in my sky"
+                                font.pixelSize: 11
+                                checked: plannerWindow.viewFilterEnabled
+                                onToggled: plannerWindow.viewFilterEnabled = checked
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+
+                            Button {
+                                text: "All sky"
+                                flat: true; implicitHeight: parent.parent.fieldH
+                                anchors.verticalCenter: parent.verticalCenter
+                                enabled: plannerWindow.viewAreaActive
+                                onClicked: {
+                                    plannerWindow.viewSectors = [true, true, true, true, true, true, true, true]
+                                    plannerWindow.viewMinAlt  = 15
+                                    altMinField.text = "15"
+                                }
+                            }
+                        }
+                    }
+                }
                 }
             }
         }

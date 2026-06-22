@@ -55,6 +55,11 @@
   </keywords>
 
   <releases>
+    <release version="1.0.2a" date="2026-06-21">
+      <description>
+        <p>Viewable-area compass filter, UTC/AM-PM clock toggle, and sky arc improvements in Observation Planner. Version bump to 1.0.2a.</p>
+      </description>
+    </release>
     <release version="1.0.1a" date="2026-06-17">
       <description>
         <p>KIO worker bundled for native file dialog support in AppImage. Version bump to 1.0.1a.</p>
