@@ -155,7 +155,7 @@ Plans tonight's session or any future night from your location:
 - Configurable minimum altitude horizon limit
 - Supports Seestar S50 mode to filter to objects within the smart telescope's capabilities
 - Night offset slider to plan sessions days ahead
-- **Sky Arc** — selecting an object draws its altitude curve across the night only (daylight excluded), stretched hour-by-hour from sunset to sunrise with twilight shading (astronomical / nautical / civil), rise/set and transit times with compass bearings, a compass strip showing the object's direction through the night, meridian crossing line with peak altitude, and a 15° planning limit marker
+- **Sky Arc** — selecting an object draws its altitude curve across a fixed 12-hour night window (18:00–06:00 local time, centred on the observing location's local midnight), with twilight shading (astronomical / nautical / civil), rise/set and transit times with compass bearings, a compass strip showing the object's direction through the night, meridian crossing line with peak altitude, and a 15° planning limit marker
 - **UTC / AM-PM toggle** — switch every time in the planner (Observable Objects list, sky-arc axis and labels, recommended observation) between 24-hour UTC and the observing location's local 12-hour AM/PM clock
 - **Viewable area** — narrow the Sky Arc to the sky you can actually see by toggling the compass directions visible from your site (N/NE/E/SE/S/SW/W/NW, independently — so non-contiguous views and a fully blocked west are fine) plus a minimum-altitude floor; in-view portions of the arc are highlighted and out-of-view portions dimmed. Tick **Show only objects in my sky** to filter the Observable Objects list down to just the targets that actually rise into those directions tonight
 
