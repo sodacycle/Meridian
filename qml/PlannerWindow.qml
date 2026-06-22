@@ -1496,16 +1496,9 @@ Window {
                                                                  plannerService.lst(jdMid + h / 24.0, lon))
                             }
 
-                            // ── Night window: sun below horizon, bracketing local midnight ─
-                            // Daylight is excluded; the night is stretched across the canvas.
-                            var hStart = -12, hEnd = 12
-                            if (sunAlt(jdMid) < 0) {
-                                for (var hb = 0; hb >= -12; hb -= 0.05)
-                                    if (sunAlt(jdMid + hb / 24.0) >= 0) { hStart = hb; break }
-                                for (var hf = 0; hf <= 12; hf += 0.05)
-                                    if (sunAlt(jdMid + hf / 24.0) >= 0) { hEnd = hf; break }
-                            }
-                            if (hEnd - hStart < 0.5) { hStart = -12; hEnd = 12 }   // polar day fallback
+                            // ── Night window: fixed 18:00–06:00 local time ────────────────
+                            // Always centred on local midnight with ±6 hour half-window.
+                            var hStart = -6, hEnd = 6
                             var span = hEnd - hStart
                             function xOf(h) { return padL + (h - hStart) / span * plotW }
 
