@@ -14,7 +14,6 @@ Rectangle {
     property bool   jpgScanDone: false
     property int    jpgCount: 0
 
-    // Accumulated console output (append-only; cleared by the Clear button).
     property string consoleLog: ""
 
     signal jpgScanned(var rows)
@@ -27,7 +26,6 @@ Rectangle {
         jpgCleared()
     }
 
-    // Append one line to the console and scroll to the bottom.
     function log(msg) {
         consoleLog += (consoleLog !== "" ? "\n" : "") + msg
         Qt.callLater(function() {
@@ -49,17 +47,14 @@ Rectangle {
             color: window.sysPal.windowText; width: parent.width
         }
 
-        // ── Main body: button grid (left) + console (right) ───────────────────
         Row {
             id: mainRow
             width: parent.width
             spacing: 12
 
-            // Each button occupies half the left column, less one gap.
-            readonly property int btnW: 196          // per-button width
-            readonly property int leftW: btnW * 2 + 8 // = 400
+            readonly property int btnW: 196
+            readonly property int leftW: btnW * 2 + 8
 
-            // ── Left: 2-column button grid ─────────────────────────────────────
             Column {
                 id: leftCol
                 width: mainRow.leftW
@@ -116,7 +111,6 @@ Rectangle {
                     }
                 }
 
-                // JPG action row — only visible after a scan that found files
                 Row {
                     spacing: 8
                     visible: root.jpgScanDone
@@ -148,7 +142,6 @@ Rectangle {
                 }
             }
 
-            // ── Right: console output ──────────────────────────────────────────
             Rectangle {
                 id: consolePanel
                 width:  mainRow.width - mainRow.leftW - mainRow.spacing
@@ -158,7 +151,6 @@ Rectangle {
                 border.color: "#2a2d3a"
                 border.width: 1
 
-                // Header bar
                 Rectangle {
                     id: consoleHeader
                     anchors.top:   parent.top
@@ -168,7 +160,6 @@ Rectangle {
                     color:  "#1c1f2b"
                     radius: 4
 
-                    // Square off the bottom two corners so it blends into the body
                     Rectangle {
                         anchors.left:   parent.left
                         anchors.right:  parent.right
@@ -195,7 +186,6 @@ Rectangle {
                     }
                 }
 
-                // Scrollable log body
                 Flickable {
                     id: consoleFlick
                     anchors.top:    consoleHeader.bottom
@@ -224,7 +214,6 @@ Rectangle {
         Item { width: 1; height: 4 }
     }
 
-    // ── JPG deletion confirmation dialog ──────────────────────────────────────
     Dialog {
         id: confirmDeleteDialog
         parent: Overlay.overlay
@@ -254,7 +243,6 @@ Rectangle {
         }
     }
 
-    // ── Organizer signal connections ──────────────────────────────────────────
     Connections {
         target: organizer
 

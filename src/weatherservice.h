@@ -25,7 +25,6 @@ public:
 };
 Q_DECLARE_METATYPE(WeatherData)
 
-// - Provides weather lookup, caching, and unit conversion for the UI -
 class WeatherService : public QObject
 {
     Q_OBJECT
@@ -64,4 +63,4 @@ private:
     int m_currentMonth = 0;
 };
 
-#endif // WEATHERSERVICE_H
+#endif

@@ -3,8 +3,6 @@
 #include <QGeoPositionInfoSource>
 #include <QNetworkAccessManager>
 
-// Resolves the user's current position using the OS location stack (GeoClue2)
-// and falls back to IP geolocation when the system stack is unavailable.
 class LocationService : public QObject
 {
     Q_OBJECT

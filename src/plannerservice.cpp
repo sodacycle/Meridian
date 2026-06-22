@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-// ── VisibleObjectsModel ───────────────────────────────────────────────────────
+static constexpr double kDeg2Rad = M_PI / 180.0;
 
 VisibleObjectsModel::VisibleObjectsModel(QObject *parent)
     : QAbstractListModel(parent)
@@ -89,7 +89,6 @@ void VisibleObjectsModel::rebuild()
 {
     beginResetModel();
 
-    // Step 1: filter
     if (m_filter.isEmpty()) {
         m_entries = m_allEntries;
     } else {
@@ -101,32 +100,23 @@ void VisibleObjectsModel::rebuild()
         }
     }
 
-    // Step 2: sort (if active)
     if (!m_sortCol.isEmpty()) {
         const QString col = m_sortCol;
         const bool    asc = m_sortAsc;
         std::stable_sort(m_entries.begin(), m_entries.end(),
             [&](const PlannerEntry &a, const PlannerEntry &b) {
                 bool less = false;
-                if (col == QLatin1String("Name")) {
+                if      (col == QLatin1String("Name"))    {
                     const QString na = a.commonName.isEmpty() ? a.name : a.commonName;
                     const QString nb = b.commonName.isEmpty() ? b.name : b.commonName;
                     less = na.compare(nb, Qt::CaseInsensitive) < 0;
-                } else if (col == QLatin1String("Type")) {
-                    less = a.type.compare(b.type, Qt::CaseInsensitive) < 0;
-                } else if (col == QLatin1String("Con")) {
-                    less = a.constellation.compare(b.constellation, Qt::CaseInsensitive) < 0;
-                } else if (col == QLatin1String("Mag")) {
-                    less = a.mag < b.mag;
-                } else if (col == QLatin1String("Size")) {
-                    less = a.sizeArcmin < b.sizeArcmin;
-                } else if (col == QLatin1String("Peak Alt")) {
-                    less = a.peakAlt < b.peakAlt;
-                } else if (col == QLatin1String("Window")) {
-                    less = a.windowH < b.windowH;
-                } else if (col == QLatin1String("UTC Visible")) {
-                    less = a.riseUtcH < b.riseUtcH;
-                }
+                } else if (col == QLatin1String("Type"))       { less = a.type.compare(b.type, Qt::CaseInsensitive) < 0; }
+                  else if (col == QLatin1String("Con"))        { less = a.constellation.compare(b.constellation, Qt::CaseInsensitive) < 0; }
+                  else if (col == QLatin1String("Mag"))        { less = a.mag < b.mag; }
+                  else if (col == QLatin1String("Size"))       { less = a.sizeArcmin < b.sizeArcmin; }
+                  else if (col == QLatin1String("Peak Alt"))   { less = a.peakAlt < b.peakAlt; }
+                  else if (col == QLatin1String("Window"))     { less = a.windowH < b.windowH; }
+                  else if (col == QLatin1String("UTC Visible")){ less = a.riseUtcH < b.riseUtcH; }
                 return asc ? less : !less;
             });
     }
@@ -134,25 +124,19 @@ void VisibleObjectsModel::rebuild()
     endResetModel();
 }
 
-// ── PlannerService ────────────────────────────────────────────────────────────
-
 PlannerService::PlannerService(CatalogService *catalog, QObject *parent)
     : QObject(parent)
     , m_catalog(catalog)
     , m_model(new VisibleObjectsModel(this))
 {
-    // If the catalog was already loaded synchronously before this service
-    // was constructed, record that we're ready now.
     if (m_catalog->ready())
         m_ready = true;
 
-    // Recompute whenever the catalog (re)loads — also handles async future loads.
     connect(m_catalog, &CatalogService::catalogLoaded, this, [this]() {
         if (!m_ready) {
             m_ready = true;
             emit readyChanged();
         }
-        // Recompute if a location has already been set.
         if (m_lat != 0.0 || m_lon != 0.0)
             doCompute();
     });
@@ -160,8 +144,8 @@ PlannerService::PlannerService(CatalogService *catalog, QObject *parent)
 
 void PlannerService::compute(double lat, double lon, int nightOffset)
 {
-    m_lat        = lat;
-    m_lon        = lon;
+    m_lat         = lat;
+    m_lon         = lon;
     m_nightOffset = nightOffset;
     if (m_catalog->ready())
         doCompute();
@@ -178,8 +162,6 @@ void PlannerService::setViewFilter(const QVariantList &sectors, double minAltDeg
     if (m_catalog->ready() && (m_lat != 0.0 || m_lon != 0.0))
         doCompute();
 }
-
-// ── Astronomical math (ported from PlannerWindow.qml JS) ─────────────────────
 
 double PlannerService::toJD(double epochMs) const
 {
@@ -204,159 +186,128 @@ double PlannerService::lst(double jd, double lonDeg) const
 
 double PlannerService::altitudeDeg(double raH, double decDeg, double latDeg, double lstDeg) const
 {
-    static constexpr double DEG2RAD = M_PI / 180.0;
-    const double ha  = std::fmod(std::fmod(lstDeg - raH * 15.0, 360.0) + 360.0, 360.0);
-    const double haR = ha  * DEG2RAD;
-    const double dR  = decDeg * DEG2RAD;
-    const double lR  = latDeg * DEG2RAD;
-    const double sinAlt = std::sin(lR) * std::sin(dR)
-                        + std::cos(lR) * std::cos(dR) * std::cos(haR);
-    return std::asin(std::max(-1.0, std::min(1.0, sinAlt))) / DEG2RAD;
+    const double haDeg  = std::fmod(std::fmod(lstDeg - raH * 15.0, 360.0) + 360.0, 360.0);
+    const double haRad  = haDeg  * kDeg2Rad;
+    const double decRad = decDeg * kDeg2Rad;
+    const double latRad = latDeg * kDeg2Rad;
+    const double sinAlt = std::sin(latRad) * std::sin(decRad)
+                        + std::cos(latRad) * std::cos(decRad) * std::cos(haRad);
+    return std::asin(std::max(-1.0, std::min(1.0, sinAlt))) / kDeg2Rad;
 }
 
 double PlannerService::azimuthDeg(double raH, double decDeg, double latDeg, double lstDeg) const
 {
-    static constexpr double DEG2RAD = M_PI / 180.0;
-    const double ha  = std::fmod(std::fmod(lstDeg - raH * 15.0, 360.0) + 360.0, 360.0);
-    const double haR = ha  * DEG2RAD;
-    const double dR  = decDeg * DEG2RAD;
-    const double lR  = latDeg * DEG2RAD;
-    // Azimuth from South, positive to the West (Meeus); convert to compass
-    // bearing measured from North, increasing eastward, in [0, 360).
-    const double aSouth = std::atan2(std::sin(haR),
-                                     std::cos(haR) * std::sin(lR) - std::tan(dR) * std::cos(lR));
-    double az = aSouth / DEG2RAD + 180.0;
-    az = std::fmod(std::fmod(az, 360.0) + 360.0, 360.0);
-    return az;
+    const double haDeg      = std::fmod(std::fmod(lstDeg - raH * 15.0, 360.0) + 360.0, 360.0);
+    const double haRad      = haDeg  * kDeg2Rad;
+    const double decRad     = decDeg * kDeg2Rad;
+    const double latRad     = latDeg * kDeg2Rad;
+    const double azSouthRad = std::atan2(std::sin(haRad),
+                                         std::cos(haRad) * std::sin(latRad) - std::tan(decRad) * std::cos(latRad));
+    return std::fmod(azSouthRad / kDeg2Rad + 540.0, 360.0);
 }
 
 double PlannerService::riseSetHAHours(double decDeg, double latDeg, double horizonDeg) const
 {
-    static constexpr double DEG2RAD = M_PI / 180.0;
-    const double h = horizonDeg * DEG2RAD;
-    const double d = decDeg     * DEG2RAD;
-    const double L = latDeg     * DEG2RAD;
+    const double horizonRad = horizonDeg * kDeg2Rad;
+    const double decRad     = decDeg     * kDeg2Rad;
+    const double latRad     = latDeg     * kDeg2Rad;
 
-    const double denom = std::cos(L) * std::cos(d);
-    if (std::abs(denom) < 1e-10) {
-        // At or near a pole — decide based on numerator sign
-        return (std::sin(h) - std::sin(L) * std::sin(d)) > 0.0 ? -1.0 : 24.0;
-    }
-    const double cosHA = (std::sin(h) - std::sin(L) * std::sin(d)) / denom;
-    if (cosHA >  1.0) return -1.0;  // never clears horizon
-    if (cosHA < -1.0) return 24.0;  // circumpolar
-    return std::acos(cosHA) / DEG2RAD / 15.0;
+    const double denom = std::cos(latRad) * std::cos(decRad);
+    if (std::abs(denom) < 1e-10)
+        return (std::sin(horizonRad) - std::sin(latRad) * std::sin(decRad)) > 0.0 ? -1.0 : 24.0;
+
+    const double cosHA = (std::sin(horizonRad) - std::sin(latRad) * std::sin(decRad)) / denom;
+    if (cosHA >  1.0) return -1.0;
+    if (cosHA < -1.0) return 24.0;
+    return std::acos(cosHA) / kDeg2Rad / 15.0;
 }
 
 void PlannerService::doCompute()
 {
-    // Reference point: local midnight (00:00) on the selected night.
-    // Together with kNightHalf = 6 this gives an 18:00–06:00 window.
-    QDateTime localMidnight = QDateTime::currentDateTime();
-    localMidnight.setTime(QTime(0, 0, 0));
-    localMidnight = localMidnight.addDays(m_nightOffset);
+    static constexpr qint64 kDayMs                   = Q_INT64_C(86400000);
+    static constexpr double kNightHalfHours           = 6.0;
+    static constexpr double kSiderealDegPerSolarHour  = 15.04107;
 
-    const double jdMid  = toJD(static_cast<double>(localMidnight.toMSecsSinceEpoch()));
-    const double lstMid = lst(jdMid, m_lon);   // degrees at midnight reference
+    const qint64 utcNowMs    = QDateTime::currentDateTimeUtc().toMSecsSinceEpoch();
+    const qint64 lonOffsetMs = static_cast<qint64>(m_lon / 15.0 * 3600000.0);
+    const qint64 localNowMs  = utcNowMs + lonOffsetMs;
+    const qint64 midnightMs  = (localNowMs / kDayMs) * kDayMs - lonOffsetMs
+                               + static_cast<qint64>(m_nightOffset) * kDayMs;
 
-    const QTime utcMidTime = localMidnight.toUTC().time();
-    const double utcMidH   = utcMidTime.hour()
-                           + utcMidTime.minute() / 60.0
-                           + utcMidTime.second() / 3600.0;
+    const double midnightJD    = toJD(static_cast<double>(midnightMs));
+    const double lstAtMidnight = lst(midnightJD, m_lon);
+    const double midnightUtcH  = static_cast<double>(
+        ((midnightMs % kDayMs) + kDayMs) % kDayMs) / 3600000.0;
 
-    // Observable night = midnight ± kNightHalf hours = 18:00–06:00 local time.
-    // A conservative darkness window valid for most latitudes and seasons.
-    // Prevents objects that only rise during the day from appearing in the list.
-    static constexpr double kNightHalf = 6.0;
-
-    // Convert a target LST (degrees) to solar hours offset from midnight.
-    // Negative = before midnight, positive = after midnight.
-    auto lstToHrOffset = [&](double lstTargetDeg) -> double {
-        double d = std::fmod(lstTargetDeg - lstMid + 360.0, 360.0);
-        if (d > 180.0) d -= 360.0;
-        return d / 15.04107;  // sidereal ° → solar hours
+    auto lstToMidnightOffsetH = [&](double targetLstDeg) -> double {
+        double delta = std::fmod(targetLstDeg - lstAtMidnight + 360.0, 360.0);
+        if (delta > 180.0) delta -= 360.0;
+        return delta / kSiderealDegPerSolarHour;
     };
 
-    const double nightStartUtc = std::fmod(utcMidH - kNightHalf + 24.0, 24.0);
+    const double nightStartUtcH = std::fmod(midnightUtcH - kNightHalfHours + 24.0, 24.0);
 
     QList<PlannerEntry> results;
     results.reserve(m_catalog->entries().size());
 
     for (const CatalogEntry &ce : m_catalog->entries()) {
 
-        // Hour angle at which the object crosses the 15° observation horizon.
-        //   < 0  → never clears 15° from this latitude  (skip)
-        //   ≥ 24 → circumpolar above 15° (always up)
-        const double haH = riseSetHAHours(ce.decDeg, m_lat);
-        if (haH < 0.0) continue;
+        const double riseSetHaH = riseSetHAHours(ce.decDeg, m_lat);
+        if (riseSetHaH < 0.0) continue;
 
-        const bool circumpolar = (haH >= 24.0);
+        const bool circumpolar = (riseSetHaH >= 24.0);
 
-        // ── Rise / set UTC times ──────────────────────────────────────────────
         double riseUtcH = 0.0, setUtcH = 0.0;
         if (!circumpolar) {
-            const double lstRiseDeg = std::fmod(std::fmod((ce.raHours - haH) * 15.0, 360.0) + 360.0, 360.0);
-            const double lstSetDeg  = std::fmod(std::fmod((ce.raHours + haH) * 15.0, 360.0) + 360.0, 360.0);
-            riseUtcH = std::fmod(utcMidH + lstToHrOffset(lstRiseDeg) + 24.0, 24.0);
-            setUtcH  = std::fmod(utcMidH + lstToHrOffset(lstSetDeg)  + 24.0, 24.0);
+            const double lstAtRise = std::fmod(std::fmod((ce.raHours - riseSetHaH) * 15.0, 360.0) + 360.0, 360.0);
+            const double lstAtSet  = std::fmod(std::fmod((ce.raHours + riseSetHaH) * 15.0, 360.0) + 360.0, 360.0);
+            riseUtcH = std::fmod(midnightUtcH + lstToMidnightOffsetH(lstAtRise) + 24.0, 24.0);
+            setUtcH  = std::fmod(midnightUtcH + lstToMidnightOffsetH(lstAtSet)  + 24.0, 24.0);
         }
 
-        // ── Night-overlap check & nighttime window ────────────────────────────
-        // Normalize the object's visibility interval relative to nightStart so
-        // that the darkness window maps to [0, kNightHalf*2].  Subtracting 24
-        // when relRise > 12 handles the "already risen before nightStart" case.
         double nightWindowH;
         if (circumpolar) {
-            nightWindowH = kNightHalf * 2.0;
+            nightWindowH = kNightHalfHours * 2.0;
         } else {
-            const double objSpan = std::fmod(setUtcH - riseUtcH + 24.0, 24.0);
-            double relRise = std::fmod(riseUtcH - nightStartUtc + 24.0, 24.0);
-            if (relRise > 12.0) relRise -= 24.0;   // object was up before night started
-            const double relSet = relRise + objSpan;
+            const double visibilitySpanH = std::fmod(setUtcH - riseUtcH + 24.0, 24.0);
+            double relativeRiseH = std::fmod(riseUtcH - nightStartUtcH + 24.0, 24.0);
+            if (relativeRiseH > 12.0) relativeRiseH -= 24.0;
+            const double relativeSetH = relativeRiseH + visibilitySpanH;
 
-            // No overlap with darkness window [0, kNightHalf*2]:
-            if (relRise >= kNightHalf * 2.0 || relSet <= 0.0) continue;
+            if (relativeRiseH >= kNightHalfHours * 2.0 || relativeSetH <= 0.0) continue;
 
-            nightWindowH = std::min(relSet, kNightHalf * 2.0) - std::max(relRise, 0.0);
+            nightWindowH = std::min(relativeSetH, kNightHalfHours * 2.0)
+                         - std::max(relativeRiseH, 0.0);
         }
 
-        // ── Peak altitude during tonight's darkness window ────────────────────
-        // The absolute maximum is at upper transit (HA = 0).  If transit falls
-        // inside the window we can use it directly; otherwise the maximum during
-        // the night is at whichever window boundary is closest to transit.
-        const double transitAlt    = 90.0 - std::abs(m_lat - ce.decDeg);
-        const double transitOffset = lstToHrOffset(std::fmod(ce.raHours * 15.0, 360.0));
+        const double transitAlt     = 90.0 - std::abs(m_lat - ce.decDeg);
+        const double transitOffsetH = lstToMidnightOffsetH(std::fmod(ce.raHours * 15.0, 360.0));
 
         double nightPeakAlt;
-        if (std::abs(transitOffset) <= kNightHalf) {
+        if (std::abs(transitOffsetH) <= kNightHalfHours) {
             nightPeakAlt = transitAlt;
         } else {
-            const double boundaryOffset = (transitOffset > 0.0) ? kNightHalf : -kNightHalf;
+            const double windowBoundaryH = (transitOffsetH > 0.0) ? kNightHalfHours : -kNightHalfHours;
             nightPeakAlt = altitudeDeg(ce.raHours, ce.decDeg, m_lat,
-                                       lst(jdMid + boundaryOffset / 24.0, m_lon));
+                                       lst(midnightJD + windowBoundaryH / 24.0, m_lon));
         }
 
-        if (nightPeakAlt < 15.0) continue;  // clears latitude but not during this night
+        if (nightPeakAlt < 15.0) continue;
 
-        // ── Viewable-area filter ──────────────────────────────────────────────
-        // Keep the object only if, at some point during the darkness window, it
-        // sits in an enabled compass sector and above the obstruction floor.
         if (m_viewFilter) {
             const double floorDeg = std::max(15.0, m_viewMinAlt);
             bool reachable = false;
-            for (double t = -kNightHalf; t <= kNightHalf + 1e-9; t += 0.25) {
-                const double lstT = lst(jdMid + t / 24.0, m_lon);
-                if (altitudeDeg(ce.raHours, ce.decDeg, m_lat, lstT) < floorDeg)
-                    continue;
-                const double azT = azimuthDeg(ce.raHours, ce.decDeg, m_lat, lstT);
-                const int idx = static_cast<int>(
-                    std::lround(std::fmod(std::fmod(azT, 360.0) + 360.0, 360.0) / 45.0)) % 8;
-                if (m_viewSectors.value(idx, true)) { reachable = true; break; }
+            for (double t = -kNightHalfHours; t <= kNightHalfHours + 1e-9; t += 0.25) {
+                const double lstAtT = lst(midnightJD + t / 24.0, m_lon);
+                if (altitudeDeg(ce.raHours, ce.decDeg, m_lat, lstAtT) < floorDeg) continue;
+                const double azAtT = azimuthDeg(ce.raHours, ce.decDeg, m_lat, lstAtT);
+                const int sectorIdx = static_cast<int>(
+                    std::lround(std::fmod(std::fmod(azAtT, 360.0) + 360.0, 360.0) / 45.0)) % 8;
+                if (m_viewSectors.value(sectorIdx, true)) { reachable = true; break; }
             }
             if (!reachable) continue;
         }
 
-        // ── Build entry ───────────────────────────────────────────────────────
         PlannerEntry pe;
         pe.name          = ce.name;
         pe.commonName    = ce.commonName;
@@ -366,10 +317,10 @@ void PlannerService::doCompute()
         pe.sizeArcmin    = ce.sizeArcmin;
         pe.raHours       = ce.raHours;
         pe.decDeg        = ce.decDeg;
-        pe.altAtMidnight = altitudeDeg(ce.raHours, ce.decDeg, m_lat, lstMid);
-        pe.peakAlt       = nightPeakAlt;  // max altitude reachable this night
+        pe.altAtMidnight = altitudeDeg(ce.raHours, ce.decDeg, m_lat, lstAtMidnight);
+        pe.peakAlt       = nightPeakAlt;
         pe.circumpolar   = circumpolar;
-        pe.windowH       = nightWindowH;  // hours above 15° within darkness window
+        pe.windowH       = nightWindowH;
         pe.riseUtcH      = riseUtcH;
         pe.setUtcH       = setUtcH;
         results.append(pe);

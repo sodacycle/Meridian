@@ -52,7 +52,6 @@ Rectangle {
         return h + "h" + (m > 0 ? " " + m + "m" : "")
     }
 
-    // Computed from window.fullMetadataList whenever selectedTarget changes
     property var targetDetails: {
         var name = root.selectedTarget
         if (!name) return null
@@ -76,7 +75,6 @@ Rectangle {
             if (d && d > lastDate) lastDate = d
         }
 
-        // Sum integration time for the last session
         var lastSessionSecs = 0
         if (lastDate) {
             for (var j = 0; j < allRows.length; j++) {
@@ -87,7 +85,6 @@ Rectangle {
             }
         }
 
-        // Build sorted exposure list
         var expList = []
         for (var k in expGroups) expList.push({ key: k, count: expGroups[k] })
         expList.sort(function(a, b) { return parseFloat(a.key) - parseFloat(b.key) })
@@ -114,7 +111,6 @@ Rectangle {
             color: window.sysPal.windowText; width: parent.width
         }
 
-        // Catalog chips grid
         Grid {
             id: catalogGrid
             width: parent.width
@@ -177,8 +173,6 @@ Rectangle {
             visible: root.rowCount === 0; width: parent.width
         }
 
-        // ── Target detail section (shown when a target is selected) ──────────
-
         Rectangle {
             width: parent.width; height: 1
             color: window.sysPal.mid
@@ -190,7 +184,6 @@ Rectangle {
             spacing: 8
             visible: root.targetDetails !== null
 
-            // Header row: target name + catalog badge
             Row {
                 spacing: 8
                 Text {
@@ -214,7 +207,6 @@ Rectangle {
                 }
             }
 
-            // Exposure breakdown row
             Row {
                 width: parent.width
                 spacing: 6
@@ -253,7 +245,6 @@ Rectangle {
                 }
             }
 
-            // Last session row
             Row {
                 spacing: 6
                 Text {

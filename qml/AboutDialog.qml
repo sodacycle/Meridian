@@ -9,14 +9,12 @@ Dialog {
     title: "About Meridian"
     standardButtons: Dialog.Close
 
-    // Fixed width; height is content-driven.
     implicitWidth: 440
 
     Column {
         width: parent.width
         spacing: 0
 
-        // ── App name + version badge ──────────────────────────────────────────
         Row {
             width: parent.width
             spacing: 12
@@ -56,14 +54,12 @@ Dialog {
         }
         Item { width: 1; height: 14 }
 
-        // ── Divider ───────────────────────────────────────────────────────────
         Rectangle {
             width: parent.width; height: 1
             color: window.sysPal.mid
         }
         Item { width: 1; height: 14 }
 
-        // ── Description ───────────────────────────────────────────────────────
         Text {
             width: parent.width
             text: "A cross-platform desktop application for astrophotographers. " +
@@ -77,7 +73,6 @@ Dialog {
         }
         Item { width: 1; height: 18 }
 
-        // ── Info grid ─────────────────────────────────────────────────────────
         Grid {
             width: parent.width
             columns: 2
@@ -96,14 +91,12 @@ Dialog {
         }
         Item { width: 1; height: 18 }
 
-        // ── Divider ───────────────────────────────────────────────────────────
         Rectangle {
             width: parent.width; height: 1
             color: window.sysPal.mid
         }
         Item { width: 1; height: 12 }
 
-        // ── GitHub link ───────────────────────────────────────────────────────
         Row {
             spacing: 8
 

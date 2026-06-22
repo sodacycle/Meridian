@@ -3,8 +3,6 @@
 #include <QList>
 #include <QString>
 
-// Typed catalog entry — exposed to C++ callers (e.g. PlannerService).
-// Q_GADGET lets QML read properties if ever stored in a QVariant.
 struct CatalogEntry {
     Q_GADGET
     Q_PROPERTY(QString name         MEMBER name)
@@ -20,15 +18,13 @@ public:
     QString commonName;
     QString type;
     QString constellation;
-    double  mag        = 99.0; // 99 = unknown
+    double  mag        = 99.0;
     double  sizeArcmin = 0.0;
     double  raHours    = 0.0;
     double  decDeg     = 0.0;
 };
 Q_DECLARE_METATYPE(CatalogEntry)
 
-// Loads the bundled NGC/IC/Messier catalog JSON and exposes the filtered
-// object list to C++ callers (PlannerService) via entries().
 class CatalogService : public QObject
 {
     Q_OBJECT

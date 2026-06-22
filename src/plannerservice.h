@@ -6,10 +6,6 @@
 #include <QVariant>
 #include "catalogservice.h"
 
-// ── PlannerEntry ─────────────────────────────────────────────────────────────
-// Q_GADGET value type: one computed observation-planner object.
-// All fields are Q_PROPERTYs so QML can read them when the value is stored
-// in a property var (e.g. plannerWindow.selectedObj).
 struct PlannerEntry {
     Q_GADGET
     Q_PROPERTY(QString name          MEMBER name)
@@ -31,22 +27,19 @@ public:
     QString commonName;
     QString type;
     QString constellation;
-    double  mag          = 99.0;
-    double  sizeArcmin   = 0.0;
-    double  raHours      = 0.0;
-    double  decDeg       = 0.0;
+    double  mag           = 99.0;
+    double  sizeArcmin    = 0.0;
+    double  raHours       = 0.0;
+    double  decDeg        = 0.0;
     double  altAtMidnight = 0.0;
-    double  peakAlt      = 0.0;
-    double  windowH      = 0.0;
-    bool    circumpolar  = false;
-    double  riseUtcH     = 0.0;
-    double  setUtcH      = 0.0;
+    double  peakAlt       = 0.0;
+    double  windowH       = 0.0;
+    bool    circumpolar   = false;
+    double  riseUtcH      = 0.0;
+    double  setUtcH       = 0.0;
 };
 Q_DECLARE_METATYPE(PlannerEntry)
 
-// ── VisibleObjectsModel ───────────────────────────────────────────────────────
-// QAbstractListModel wrapping a QList<PlannerEntry>.  Every PlannerEntry field
-// is exposed as a named role so QML required-property delegates work directly.
 class VisibleObjectsModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -70,7 +63,7 @@ public:
 
     explicit VisibleObjectsModel(QObject *parent = nullptr);
 
-    int     rowCount(const QModelIndex &parent = QModelIndex()) const override;
+    int      rowCount(const QModelIndex &parent = QModelIndex()) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     QHash<int, QByteArray> roleNames() const override;
 
@@ -82,15 +75,13 @@ public:
 private:
     void rebuild();
 
-    QList<PlannerEntry> m_entries;     // displayed (filtered + sorted)
-    QList<PlannerEntry> m_allEntries;  // full set from last compute
+    QList<PlannerEntry> m_entries;
+    QList<PlannerEntry> m_allEntries;
     QString m_filter;
     QString m_sortCol;
     bool    m_sortAsc = false;
 };
 
-// ── PlannerService ────────────────────────────────────────────────────────────
-// Runs the astronomical visibility math in C++ and populates VisibleObjectsModel.
 class PlannerService : public QObject
 {
     Q_OBJECT
@@ -103,15 +94,9 @@ public:
     VisibleObjectsModel *objects() const { return m_model; }
     bool ready() const { return m_ready; }
 
-    // Called from QML when location or night changes
     Q_INVOKABLE void compute(double lat, double lon, int nightOffset);
-
-    // Restrict the observable list to objects that pass through an enabled
-    // compass sector (8 booleans: N, NE, E, SE, S, SW, W, NW) while above
-    // minAltDeg during tonight's darkness window.  Pass enabled=false to clear.
     Q_INVOKABLE void setViewFilter(const QVariantList &sectors, double minAltDeg, bool enabled);
 
-    // Astronomical helpers — also called directly from QML Canvas drawing
     Q_INVOKABLE double toJD(double epochMs) const;
     Q_INVOKABLE double lst(double jd, double lonDeg) const;
     Q_INVOKABLE double altitudeDeg(double raH, double decDeg, double latDeg, double lstDeg) const;
@@ -127,12 +112,11 @@ private:
 
     CatalogService      *m_catalog;
     VisibleObjectsModel *m_model;
-    bool   m_ready      = false;
-    double m_lat        = 0.0;
-    double m_lon        = 0.0;
+    bool   m_ready       = false;
+    double m_lat         = 0.0;
+    double m_lon         = 0.0;
     int    m_nightOffset = 0;
 
-    // Viewable-area list filter (mirrors the Sky Arc viewable-area controls).
     bool        m_viewFilter  = false;
     double      m_viewMinAlt  = 15.0;
     QList<bool> m_viewSectors { true, true, true, true, true, true, true, true };

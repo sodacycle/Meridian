@@ -10,11 +10,10 @@ struct FitsCard {
     QVariant value;
 };
 
-// - Simple parser class for extracting FITS header key/value pairs from a file -
 class FitsParser
 {
 public:
     static QHash<QString, QVariant> parseHeader(const QString &filePath);
 };
 
-#endif // FITSPARSER_H
+#endif

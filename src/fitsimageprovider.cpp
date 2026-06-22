@@ -10,46 +10,19 @@ FitsImageProvider::FitsImageProvider()
     : QQuickImageProvider(QQuickImageProvider::Image)
 {}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Stretch pipeline — equivalent to astropy's:
-//   PercentileInterval(99.0) + AsinhStretch(a=0.1)
-//
-// Step 1 – PercentileInterval(99.0):
-//   vmin = 0.5th percentile, vmax = 99.5th percentile of the pixel sample.
-//   Clips outliers (hot pixels, cosmic rays) without destroying the bulk
-//   of the dynamic range.
-//
-// Step 2 – normalize to [0, 1]:
-//   x = clip((pixel − vmin) / (vmax − vmin), 0, 1)
-//
-// Step 3 – AsinhStretch(a = 0.1):
-//   y = arcsinh(x / a) / arcsinh(1 / a)
-//     = arcsinh(10·x) / arcsinh(10)
-//   Maps [0,1]→[0,1].  The 'a' parameter sets the transition between the
-//   linear (noise-suppressed) and logarithmic (faint-detail) regimes:
-//   smaller a → more aggressive stretch.  a=0.1 matches astropy's default.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// x must already be normalised to [0, 1].
-// a controls the knee: smaller a → more aggressive stretch of faint signal.
 static inline double asinhStretch(double x, double a)
 {
     return std::asinh(x / a) / std::asinh(1.0 / a);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Per-channel stretch parameters  (vmin / vmax from the percentile interval)
-// ─────────────────────────────────────────────────────────────────────────────
 struct StretchParams { double vmin, vmax; };
 
-// Compute vmin/vmax from a sorted pixel sample.
-// p is the PercentileInterval value (e.g. 99.0 → clips bottom/top 0.5% each).
 static StretchParams computeParams(const std::vector<float>& sorted, double p = 99.0)
 {
     const int ns = static_cast<int>(sorted.size());
     if (ns == 0) return {0.0, 1.0};
 
-    const double halfTail = (100.0 - p) * 0.005;   // fraction clipped on each side
+    const double halfTail = (100.0 - p) * 0.005;
     const int lo = static_cast<int>((ns - 1) * halfTail);
     const int hi = static_cast<int>((ns - 1) * (1.0 - halfTail));
 
@@ -60,11 +33,6 @@ static StretchParams computeParams(const std::vector<float>& sorted, double p = 
     return {vmin, vmax};
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Separable O(W×H) box blur applied to the final QImage.
-// Two 1-D sliding-window passes (horizontal then vertical) give a Gaussian-like
-// result; the window is (2r+1)² pixels wide.  r=0 is a no-op.
-// ─────────────────────────────────────────────────────────────────────────────
 static void applyBoxBlur(QImage& img, int r)
 {
     if (r <= 0 || img.isNull()) return;
@@ -72,7 +40,6 @@ static void applyBoxBlur(QImage& img, int r)
     const bool isRGB = (img.format() == QImage::Format_RGB32);
 
     if (isRGB) {
-        // ── Horizontal pass ──────────────────────────────────────────────────
         std::vector<int> rB(W), gB(W), bB(W), rO(W), gO(W), bO(W);
         for (int y = 0; y < H; ++y) {
             QRgb* row = reinterpret_cast<QRgb*>(img.scanLine(y));
@@ -89,7 +56,6 @@ static void applyBoxBlur(QImage& img, int r)
             }
             for (int x = 0; x < W; ++x) row[x] = qRgb(rO[x], gO[x], bO[x]);
         }
-        // ── Vertical pass ────────────────────────────────────────────────────
         std::vector<int> rC(H), gC(H), bC(H), rCO(H), gCO(H), bCO(H);
         for (int x = 0; x < W; ++x) {
             for (int y = 0; y < H; ++y) {
@@ -108,7 +74,6 @@ static void applyBoxBlur(QImage& img, int r)
                 reinterpret_cast<QRgb*>(img.scanLine(y))[x] = qRgb(rCO[y], gCO[y], bCO[y]);
         }
     } else {
-        // ── Grayscale horizontal ─────────────────────────────────────────────
         std::vector<int> buf(W), out(W);
         for (int y = 0; y < H; ++y) {
             uchar* row = img.scanLine(y);
@@ -122,7 +87,6 @@ static void applyBoxBlur(QImage& img, int r)
             }
             for (int x = 0; x < W; ++x) row[x] = static_cast<uchar>(out[x]);
         }
-        // ── Grayscale vertical ───────────────────────────────────────────────
         std::vector<int> col(H), colO(H);
         for (int x = 0; x < W; ++x) {
             for (int y = 0; y < H; ++y) col[y] = img.constScanLine(y)[x];
@@ -138,12 +102,8 @@ static void applyBoxBlur(QImage& img, int r)
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Main image provider
-// ─────────────────────────────────────────────────────────────────────────────
 QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSize &requestedSize)
 {
-    // Split "encodedPath?a=0.1&p=99.0" into path and optional stretch params.
     const int qmark = id.indexOf('?');
     const QString path = QUrl::fromPercentEncoding(
         (qmark >= 0 ? id.left(qmark) : id).toUtf8());
@@ -162,7 +122,6 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
         }
     }
 
-    // For JPG/JPEG files, load directly — no FITS processing needed
     if (path.endsWith(".jpg",  Qt::CaseInsensitive) ||
         path.endsWith(".jpeg", Qt::CaseInsensitive)) {
         QImage img;
@@ -179,10 +138,9 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
     if (!file.open(QIODevice::ReadOnly))
         return {};
 
-    // ── Parse FITS header ────────────────────────────────────────────────────
     int    bitpix = 0, naxis = 0, naxis1 = 0, naxis2 = 0, naxis3 = 1;
     double bzero  = 0.0, bscale = 1.0;
-    QString bayerPat;    // non-empty → OSC Bayer mosaic (RGGB / GRBG / GBRG / BGGR)
+    QString bayerPat;
     bool   endFound = false;
 
     while (!endFound && !file.atEnd()) {
@@ -210,7 +168,6 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
             else if (key == "BZERO")  bzero  = dval;
             else if (key == "BSCALE") bscale = dval;
             else if (key == "BAYERPAT") {
-                // FITS string value format: 'RGGB    '  — strip quotes and whitespace
                 QString s = valStr;
                 if (s.startsWith('\'')) s = s.mid(1);
                 if (s.endsWith('\''))   s = s.left(s.size() - 1);
@@ -224,7 +181,6 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
     if (!endFound || naxis < 2 || naxis1 <= 0 || naxis2 <= 0)
         return {};
 
-    // ── Read pixel data ──────────────────────────────────────────────────────
     const int    bpp     = std::abs(bitpix) / 8;
     const qint64 planes  = (naxis >= 3) ? naxis3 : 1;
     const qint64 ppPlane = (qint64)naxis1 * naxis2;
@@ -240,7 +196,6 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
 
     const uchar *d = reinterpret_cast<const uchar *>(raw.constData());
 
-    // ── Decode one pixel to physical value (big-endian FITS → float) ────────
     const auto px = [&](qint64 idx) -> float {
         const uchar *p = d + idx * bpp;
         double v = 0.0;
@@ -275,7 +230,6 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
         return static_cast<float>(bzero + bscale * v);
     };
 
-    // ── Sample one plane uniformly → sorted vector (for stretch params) ──────
     const int kSampleN = std::min((int)ppPlane, 100000);
     const auto samplePlane = [&](qint64 off) -> std::vector<float> {
         const float step = (float)ppPlane / kSampleN;
@@ -286,7 +240,6 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
         return s;
     };
 
-    // ── Apply PercentileInterval+AsinhStretch to one plane → 8-bit output ────
     const auto applyStretch = [&](qint64 off, const StretchParams& sp) -> std::vector<uchar> {
         const double range = sp.vmax - sp.vmin;
         std::vector<uchar> out(ppPlane);
@@ -298,24 +251,16 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
         return out;
     };
 
-    // ── Build QImage (FITS stores rows bottom-up → y-flip on write) ─────────
     const int W = naxis1, H = naxis2;
     QImage image;
 
-    // ── Branch 1: OSC Bayer mosaic ───────────────────────────────────────────
-    // OSC (one-shot colour) cameras store a single 2-D plane with a Bayer CFA
-    // pattern.  NAXIS=2, so planes==1 and the file looks monochrome unless we
-    // demosaic it.  We detect this via the standard BAYERPAT FITS keyword.
     if (!bayerPat.isEmpty() && planes == 1 && W >= 2 && H >= 2) {
 
-        // Colour index (0=R, 1=G, 2=B) at Bayer position (x, y).
-        // The four patterns each define the colour at the four cells of the
-        // repeating 2×2 block: [TL, TR, BL, BR] = cell indices 0,1,2,3.
         static constexpr int bayerTable[4][4] = {
-            {0, 1, 1, 2},   // RGGB
-            {1, 0, 2, 1},   // GRBG
-            {1, 2, 0, 1},   // GBRG
-            {2, 1, 1, 0},   // BGGR
+            {0, 1, 1, 2},
+            {1, 0, 2, 1},
+            {1, 2, 0, 1},
+            {2, 1, 1, 0},
         };
         const int patIdx = (bayerPat == "RGGB") ? 0 :
                            (bayerPat == "GRBG") ? 1 :
@@ -325,9 +270,6 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
             return bayerTable[patIdx][((y & 1) << 1) | (x & 1)];
         };
 
-        // Boundary-reflect pixel access so edge interpolation stays correct.
-        // reflect(-1, W)   = 1      (mirrors at x=0)
-        // reflect(W, W)    = W-2    (mirrors at x=W-1)
         const auto reflectCoord = [](int v, int max) -> int {
             if (v < 0)    return -v;
             if (v >= max) return 2 * max - 2 - v;
@@ -337,10 +279,6 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
             return px((qint64)reflectCoord(y, H) * W + reflectCoord(x, W));
         };
 
-        // Determine the (dx, dy) offset of each colour within the 2×2 Bayer block.
-        // Sampling by 2×2 blocks guarantees all four cell types are visited even
-        // when the image width is even (a linear step of any even size would only
-        // ever land on the same column parity, silently missing one colour entirely).
         int rDx = 0, rDy = 0, bDx = 0, bDy = 0;
         int g1Dx = 0, g1Dy = 0, g2Dx = 0, g2Dy = 0;
         bool foundG1 = false;
@@ -354,8 +292,6 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
             }
         }
 
-        // Sample each 2×2 block at a regular spatial stride, collecting the
-        // native pixel of each colour from its known position in the block.
         const int nBlocksX = W / 2;
         const int nBlocksY = H / 2;
         const int blockStride = std::max(1, (int)std::sqrt((double)(nBlocksX * nBlocksY) / 25000.0));
@@ -381,18 +317,6 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
         const auto pG = computeParams(gSamp, stretchP);
         const auto pB = computeParams(bSamp, stretchP);
 
-        // Bilinear demosaicing + per-channel astropy stretch in a single pass.
-        //
-        // For an R pixel at (x, y):
-        //   its 4 orthogonal neighbours are all G  → G interpolated from those
-        //   its 4 diagonal neighbours are all B    → B interpolated from those
-        //
-        // For a B pixel at (x, y): same relationship with R and G swapped.
-        //
-        // For a G pixel at (x, y):
-        //   its horizontal neighbours are either both R or both B (never mixed)
-        //   its vertical neighbours are the other colour
-        //   we detect which by checking bayerColor(x+1, y) — works for all patterns.
         image = QImage(W, H, QImage::Format_RGB32);
         for (int y = 0; y < H; ++y) {
             QRgb *line = reinterpret_cast<QRgb *>(image.scanLine(H - 1 - y));
@@ -401,24 +325,23 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
                 const int   c = bayerColor(x, y);
                 float r, g, b;
 
-                if (c == 0) {           // R pixel
+                if (c == 0) {
                     r = p;
                     g = (rp(x-1,y) + rp(x+1,y) + rp(x,y-1) + rp(x,y+1)) * 0.25f;
                     b = (rp(x-1,y-1) + rp(x+1,y-1) + rp(x-1,y+1) + rp(x+1,y+1)) * 0.25f;
-                } else if (c == 2) {    // B pixel
+                } else if (c == 2) {
                     b = p;
                     g = (rp(x-1,y) + rp(x+1,y) + rp(x,y-1) + rp(x,y+1)) * 0.25f;
                     r = (rp(x-1,y-1) + rp(x+1,y-1) + rp(x-1,y+1) + rp(x+1,y+1)) * 0.25f;
-                } else {                // G pixel
+                } else {
                     g = p;
-                    const int hc = bayerColor(x + 1, y);   // R or B in horizontal direction
+                    const int hc = bayerColor(x + 1, y);
                     const float hv = (rp(x-1,y) + rp(x+1,y)) * 0.5f;
                     const float vv = (rp(x,y-1) + rp(x,y+1)) * 0.5f;
                     if (hc == 0) { r = hv; b = vv; }
                     else         { b = hv; r = vv; }
                 }
 
-                // Per-channel PercentileInterval + AsinhStretch
                 const double rn = std::max(0.0, std::min(1.0, (r - pR.vmin) / (pR.vmax - pR.vmin)));
                 const double gn = std::max(0.0, std::min(1.0, (g - pG.vmin) / (pG.vmax - pG.vmin)));
                 const double bn = std::max(0.0, std::min(1.0, (b - pB.vmin) / (pB.vmax - pB.vmin)));
@@ -431,9 +354,7 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
             }
         }
 
-    // ── Branch 2: 3-plane colour FITS ────────────────────────────────────────
     } else if (planes >= 3) {
-        // Per-channel (unlinked) stretch.
         const auto p0 = computeParams(samplePlane(0),           stretchP);
         const auto p1 = computeParams(samplePlane(ppPlane),     stretchP);
         const auto p2 = computeParams(samplePlane(ppPlane * 2), stretchP);
@@ -451,7 +372,6 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
             }
         }
 
-    // ── Branch 3: single-plane monochrome ────────────────────────────────────
     } else {
         const auto sp = computeParams(samplePlane(0), stretchP);
         const auto L  = applyStretch(0, sp);

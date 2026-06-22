@@ -13,7 +13,6 @@ static const QSet<QString> PROCESS_SKIP_DIRS = {
     "stacked", "process", "darks", "flats", "bias", "lights", "rejected"
 };
 
-// - File scanning and organization utilities for stacked FITS detection and cleanup -
 FileOrganizer::FileOrganizer(QObject *parent) : QObject(parent) {}
 
 bool FileOrganizer::isRunning() const { return m_running; }
@@ -26,7 +25,6 @@ void FileOrganizer::cancel()
     m_canceled.storeRelaxed(1);
 }
 
-// - Recursively discover FITS files that appear to be already stacked -
 void FileOrganizer::findStackedFiles(const QString &dir, QStringList &list)
 {
     if (m_canceled.loadRelaxed()) return;
@@ -61,7 +59,6 @@ void FileOrganizer::findStackedFiles(const QString &dir, QStringList &list)
     }
 }
 
-// - Recursively locate JPG files for optional deletion -
 void FileOrganizer::findJpgFiles(const QString &dir, QStringList &list)
 {
     QDirIterator it(dir, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
@@ -76,7 +73,6 @@ void FileOrganizer::findJpgFiles(const QString &dir, QStringList &list)
     }
 }
 
-// - Recursively collect all FITS files while skipping common processed folders -
 void FileOrganizer::findFitsFiles(const QString &dir, QStringList &list)
 {
     QDirIterator it(dir, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
@@ -92,24 +88,19 @@ void FileOrganizer::findFitsFiles(const QString &dir, QStringList &list)
     }
 }
 
-// - Delete a single file; returns true on success -
 bool FileOrganizer::deleteFile(const QString &filePath)
 {
     return QFile::remove(filePath);
 }
 
-// - Move a file into a Rejected/ subfolder beside it; returns new path or empty on failure -
 QString FileOrganizer::rejectFile(const QString &filePath)
 {
     const QFileInfo info(filePath);
     if (!info.exists()) return {};
 
-    // No-op if the file is already inside a Rejected folder
     if (info.dir().dirName().compare("Rejected", Qt::CaseInsensitive) == 0)
         return filePath;
 
-    // Place Rejected/ in the parent of the file's current directory so that
-    // e.g. .../Object/lights/frame.fits → .../Object/Rejected/frame.fits
     QDir parentDir = info.dir();
     parentDir.cdUp();
     const QString rejectedDir = parentDir.absolutePath() + "/rejected";
@@ -117,7 +108,6 @@ QString FileOrganizer::rejectFile(const QString &filePath)
 
     QString destPath = rejectedDir + "/" + info.fileName();
 
-    // Resolve name collision by appending _1, _2, ...
     if (QFile::exists(destPath)) {
         const QString base   = info.completeBaseName();
         const QString suffix = info.suffix();
@@ -133,7 +123,6 @@ QString FileOrganizer::rejectFile(const QString &filePath)
     return destPath;
 }
 
-// - Write or remove a rejection sidecar (.mrj) alongside a FITS file -
 void FileOrganizer::writeSidecar(const QString &fitsPath, bool rejected)
 {
     const QString sidecarPath = fitsPath + ".mrj";
@@ -146,7 +135,6 @@ void FileOrganizer::writeSidecar(const QString &fitsPath, bool rejected)
     }
 }
 
-// - Remove empty directories recursively, avoiding the root working folder -
 void FileOrganizer::removeEmptyRecursive(const QString &folder, const QString &rootPath, int &deletedCount)
 {
     if (m_canceled.loadRelaxed()) return;
@@ -168,7 +156,6 @@ void FileOrganizer::removeEmptyRecursive(const QString &folder, const QString &r
     }
 }
 
-// - Move identified stacked FITS files into a dedicated Stacked folder -
 void FileOrganizer::organizeStacked(const QStringList &dirPaths)
 {
     if (m_running) return;
@@ -235,7 +222,6 @@ void FileOrganizer::organizeStacked(const QStringList &dirPaths)
     watcher->setFuture(future);
 }
 
-// - Scan for JPG files and return them as table rows via operationCompleted -
 void FileOrganizer::scanJpg(const QStringList &dirPaths)
 {
     if (m_running) return;
@@ -302,7 +288,6 @@ void FileOrganizer::scanJpg(const QStringList &dirPaths)
     watcher->setFuture(future);
 }
 
-// - Delete JPG files from the selected directory tree -
 void FileOrganizer::removeJpg(const QStringList &dirPaths)
 {
     if (m_running) return;
@@ -355,7 +340,6 @@ void FileOrganizer::removeJpg(const QStringList &dirPaths)
     watcher->setFuture(future);
 }
 
-// - Prepare FITS files into Siril-friendly subfolders based on frame type -
 void FileOrganizer::sirilPrep(const QStringList &dirPaths)
 {
     if (m_running) return;
@@ -424,7 +408,6 @@ void FileOrganizer::sirilPrep(const QStringList &dirPaths)
             }
         }
 
-        // Write log into the first scan directory
         QString logPath = dirPaths.first() + "/sirilprep-log.txt";
         QFile logFile(logPath);
         if (logFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -445,7 +428,6 @@ void FileOrganizer::sirilPrep(const QStringList &dirPaths)
     watcher->setFuture(future);
 }
 
-// - Remove empty folders under the directory after file operations complete -
 void FileOrganizer::removeEmptyFolders(const QStringList &dirPaths)
 {
     if (m_running) return;

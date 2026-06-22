@@ -14,7 +14,6 @@ Rectangle {
     signal jpgScanned(var rows)
     signal jpgCleared()
 
-    // Expose advanced panel state and actions to the menu bar in main.qml
     property alias advancedVisible: advancedPanel.visible
     property alias jpgScanDone:     advancedPanel.jpgScanDone
     property alias jpgCount:        advancedPanel.jpgCount
@@ -97,7 +96,6 @@ Rectangle {
             }
         }
 
-        // ── Working directories list ──────────────────────────────────────────
         Column {
             id: dirList
             width: parent.width

@@ -2,8 +2,6 @@
 #include <QObject>
 #include <QNetworkAccessManager>
 
-// Fetches sky quality data from lightpollutionmap.info and converts to Bortle class.
-// Call fetch(lat, lon) whenever a new location is obtained; properties update async.
 class LightPollutionService : public QObject
 {
     Q_OBJECT

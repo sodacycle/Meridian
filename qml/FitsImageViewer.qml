@@ -14,11 +14,9 @@ Window {
     property bool   isRejected: false
     property int    rejectedCount: 0
 
-    // Passed in from FitsViewerManager — drives the thumbnail strip.
     property var viewedPaths: []
     property var rejectedSet: ({})
 
-    // Stretch / denoise parameters — persist across Prev/Next navigation.
     property real stretchA:    0.1
     property real stretchP:    99.0
     property int  denoiseRadius: 0
@@ -55,14 +53,12 @@ Window {
         zoomLevel = Math.min(sw, sh)
     }
 
-    // ── Toolbar ───────────────────────────────────────────────────────────────
     Rectangle {
         id: toolbar
         anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
         height: 44
         color: "#2b2b2b"
 
-        // Left: zoom controls
         Row {
             anchors.verticalCenter: parent.verticalCenter
             anchors.left: parent.left; anchors.leftMargin: 10
@@ -98,7 +94,6 @@ Window {
             }
         }
 
-        // Right: navigation + close
         Row {
             anchors.verticalCenter: parent.verticalCenter
             anchors.right: parent.right; anchors.rightMargin: 10
@@ -130,7 +125,6 @@ Window {
         }
     }
 
-    // ── Side panel ─────────────────────────────────────────────────────────────
     Rectangle {
         id: sidePanel
         anchors.top: toolbar.bottom; anchors.bottom: footer.top
@@ -138,7 +132,6 @@ Window {
         width: 210
         color: "#242424"
 
-        // Top section: stretch + denoise sliders (hidden for JPG files)
         Column {
             id: controlsCol
             anchors.top: parent.top; anchors.topMargin: 14
@@ -147,7 +140,6 @@ Window {
             spacing: 4
             visible: !viewer.isJpg
 
-            // ── Stretch (a) ──────────────────────────────────────────────────
             Item {
                 width: parent.width; height: 16
                 Text {
@@ -172,7 +164,6 @@ Window {
 
             Item { width: 1; height: 6 }
 
-            // ── Clip (%) ─────────────────────────────────────────────────────
             Item {
                 width: parent.width; height: 16
                 Text {
@@ -197,7 +188,6 @@ Window {
 
             Item { width: 1; height: 6 }
 
-            // ── Denoise ──────────────────────────────────────────────────────
             Item {
                 width: parent.width; height: 16
                 Text {
@@ -241,7 +231,6 @@ Window {
             }
         }
 
-        // Bottom section: action buttons
         Column {
             anchors.bottom: parent.bottom; anchors.bottomMargin: 12
             anchors.left: parent.left; anchors.leftMargin: 10
@@ -286,7 +275,6 @@ Window {
         }
     }
 
-    // ── Image area ────────────────────────────────────────────────────────────
     Rectangle {
         id: imageArea
         anchors.top: toolbar.bottom; anchors.bottom: thumbnailStrip.top
@@ -328,7 +316,6 @@ Window {
                     }
                 }
 
-                // Red X rejection overlay
                 Canvas {
                     id: rejectOverlay
                     anchors.fill: imageItem
@@ -379,7 +366,6 @@ Window {
         }
     }
 
-    // ── Thumbnail strip ───────────────────────────────────────────────────────
     Rectangle {
         id: thumbnailStrip
         anchors.bottom: footer.top
@@ -388,7 +374,6 @@ Window {
         color: "#161616"
         clip: true
 
-        // Scroll to the current thumbnail whenever filePath changes.
         onVisibleChanged: scrollToCurrent()
         Connections {
             target: viewer
@@ -441,7 +426,6 @@ Window {
                     }
                 }
 
-                // Red dot overlay when rejected
                 Rectangle {
                     visible: !!viewer.rejectedSet[modelData]
                     anchors.top: parent.top; anchors.right: parent.right
@@ -465,7 +449,6 @@ Window {
         }
     }
 
-    // ── Footer (path + error) ─────────────────────────────────────────────────
     Rectangle {
         id: footer
         anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right
@@ -497,7 +480,6 @@ Window {
         }
     }
 
-    // ── Finalize confirmation dialog ──────────────────────────────────────────
     Dialog {
         id: finalizeDialog
         parent: Overlay.overlay
@@ -526,7 +508,6 @@ Window {
         onAccepted: viewer.finalizeAccepted()
     }
 
-    // ── Delete confirmation dialog ────────────────────────────────────────────
     Dialog {
         id: deleteDialog
         parent: Overlay.overlay

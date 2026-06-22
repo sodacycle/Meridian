@@ -8,7 +8,6 @@
 #include <QTimeZone>
 #include <cmath>
 
-// - Initialize weather service and restore saved settings for units and location -
 WeatherService::WeatherService(QObject *parent)
     : QObject(parent)
     , m_network(new QNetworkAccessManager(this))
@@ -23,7 +22,6 @@ bool WeatherService::isCelsius() const { return m_celsius; }
 double WeatherService::latitude() const { return m_latitude; }
 double WeatherService::longitude() const { return m_longitude; }
 
-// - Update the weather location and persist it to settings -
 void WeatherService::setLocation(double lat, double lon)
 {
     m_latitude = lat;
@@ -34,7 +32,6 @@ void WeatherService::setLocation(double lat, double lon)
     emit locationChanged();
 }
 
-// - Switch between Celsius and Fahrenheit display units -
 void WeatherService::toggleUnit()
 {
     m_celsius = !m_celsius;
@@ -44,7 +41,6 @@ void WeatherService::toggleUnit()
     emit weatherUpdated();
 }
 
-// - Fetch weather for the full date range covered by the scanned files -
 void WeatherService::fetchWeatherForDateRange(const QString &startDate, const QString &endDate)
 {
     if (m_latitude == 0 && m_longitude == 0) return;
@@ -54,7 +50,6 @@ void WeatherService::fetchWeatherForDateRange(const QString &startDate, const QS
     QDate end   = QDate::fromString(endDate,   "yyyy-MM-dd");
     if (!start.isValid() || !end.isValid() || start > end) return;
 
-    // One archive call covering the entire historical span in one request
     if (start < today) {
         QDate histEnd = qMin(today, end);
         QUrl url("https://archive-api.open-meteo.com/v1/archive");
@@ -79,8 +74,6 @@ void WeatherService::fetchWeatherForDateRange(const QString &startDate, const QS
         });
     }
 
-    // Forecast call: no start_date — adding it causes forecast_days to be ignored
-    // and only 1 day to be returned. The endpoint defaults to starting from today.
     QUrl forecastUrl("https://api.open-meteo.com/v1/forecast");
     QUrlQuery forecastQuery;
     forecastQuery.addQueryItem("latitude",      QString::number(m_latitude));
@@ -102,7 +95,6 @@ void WeatherService::fetchWeatherForDateRange(const QString &startDate, const QS
     });
 }
 
-// - Fetch historical and forecast weather from Open-Meteo for the selected month -
 void WeatherService::fetchWeather(int year, int month)
 {
     m_currentYear = year;
@@ -114,7 +106,6 @@ void WeatherService::fetchWeather(int year, int month)
     QDate today = QDate::currentDate();
     QDate firstOfMonth(year, month, 1);
 
-    // Historical weather
     if (firstOfMonth < today) {
         QDate endDate = qMin(today, QDate(year, month, firstOfMonth.daysInMonth()));
         QUrl url("https://archive-api.open-meteo.com/v1/archive");
@@ -138,7 +129,6 @@ void WeatherService::fetchWeather(int year, int month)
         });
     }
 
-    // Forecast weather — no start_date, see fetchWeatherForDateRange for explanation
     QUrl forecastUrl("https://api.open-meteo.com/v1/forecast");
     QUrlQuery forecastQuery;
     forecastQuery.addQueryItem("latitude",      QString::number(m_latitude));
@@ -160,7 +150,6 @@ void WeatherService::fetchWeather(int year, int month)
     });
 }
 
-// - Parse API response JSON and populate the weather cache per day -
 void WeatherService::parseWeatherResponse(const QJsonObject &data)
 {
     QJsonObject daily = data["daily"].toObject();
@@ -235,7 +224,6 @@ WeatherData WeatherService::weatherForDate(const QString &dateStr) const
     return m_weatherCache.value(dateStr);
 }
 
-// - Convert weather conditions and cloud cover into a matching emoji icon -
 QString WeatherService::getWeatherEmoji(int weatherCode, double avgCloud) const
 {
     if (avgCloud < 20) return "☀️";
@@ -250,7 +238,6 @@ QString WeatherService::getWeatherEmoji(int weatherCode, double avgCloud) const
     return "☁️";
 }
 
-// - Compute the moon phase indicator for the given date -
 QString WeatherService::getMoonPhase(const QDateTime &date) const
 {
     const double lunarCycle = 29.53058867;

@@ -10,20 +10,16 @@ ApplicationWindow {
     minimumHeight: 600
     visible: true
 
-    // Use the system window background color — picks up KDE/GTK theme
     color: palette.window
 
     property string selectedDirectory: ""
     property var    fullMetadataList:  []
     property bool   scanCompleted:     false
 
-    // Path auto-added by SeestarService so we can remove it on disconnect.
     property string seestarAutoAddedPath: ""
 
-    // ── Menu bar ─────────────────────────────────────────────────────────────
     menuBar: MenuBar {
 
-        // ── File ─────────────────────────────────────────────────────────────
         Menu {
             title: "&File"
 
@@ -60,7 +56,6 @@ ApplicationWindow {
             }
         }
 
-        // ── Tools ─────────────────────────────────────────────────────────────
         Menu {
             title: "&Tools"
 
@@ -153,7 +148,6 @@ ApplicationWindow {
             }
         }
 
-        // ── View ──────────────────────────────────────────────────────────────
         Menu {
             title: "&View"
 
@@ -174,7 +168,6 @@ ApplicationWindow {
             }
         }
 
-        // ── Help ──────────────────────────────────────────────────────────────
         Menu {
             title: "&Help"
 
@@ -185,10 +178,8 @@ ApplicationWindow {
         }
     }
 
-    // ── About dialog ──────────────────────────────────────────────────────────
     AboutDialog { id: aboutDialog }
 
-    // ── Reject selected file dialog ───────────────────────────────────────────
     Dialog {
         id: menuRejectFileDialog
         parent: Overlay.overlay
@@ -224,7 +215,6 @@ ApplicationWindow {
         }
     }
 
-    // ── Delete selected file dialog ───────────────────────────────────────────
     Dialog {
         id: menuDeleteFileDialog
         parent: Overlay.overlay
@@ -263,7 +253,6 @@ ApplicationWindow {
         }
     }
 
-    // ── JPG delete dialog (triggered from menu) ───────────────────────────────
     Dialog {
         id: menuDeleteJpgDialog
         parent: Overlay.overlay
@@ -294,15 +283,11 @@ ApplicationWindow {
         }
     }
 
-    // Single SystemPalette instance shared by all child panels via window.sysPal
-    // Qt automatically updates this when the user changes the desktop theme.
     SystemPalette {
         id: sysPalette
         colorGroup: SystemPalette.Active
     }
 
-    // Expose palette to child QML via the window id so panels don't each
-    // need their own SystemPalette object.
     readonly property SystemPalette sysPal: sysPalette
 
     ScrollView {
@@ -332,7 +317,6 @@ ApplicationWindow {
                     imagingCalendar.buildCalendar(window.fullMetadataList)
                 }
             }
-            // ── Seestar status panel ─────────────────────────────────────────
             Rectangle {
                 anchors.left:    parent.left
                 anchors.right:   parent.right
@@ -401,8 +385,6 @@ ApplicationWindow {
                 }
             }
 
-            // Target Summary (fixed width, ends at Total Integration Time) sits
-            // to the left; Catalog Breakdown fills the remaining space to its right.
             Item {
                 anchors.left:    parent.left
                 anchors.right:   parent.right
@@ -413,7 +395,6 @@ ApplicationWindow {
                     id: targetSummaryView
                     anchors.top:  parent.top
                     anchors.left: parent.left
-                    // width is self-determined by the component (colW sum + margins)
                     onTargetSelected: function(name) {
                         catalogBreakdown.selectedTarget     = name
                         imagingCalendar.activeTargetFilter  = name
@@ -469,13 +450,11 @@ ApplicationWindow {
         }
     }
 
-    // Observation planner window — opened via Tools > Open Planner
     PlannerWindow {
         id: plannerWindow
         visible: false
     }
 
-    // Viewer window + rejection session state, extracted to keep main.qml lean.
     FitsViewerManager {
         id: viewerManager
         transientParent:    window
@@ -483,8 +462,6 @@ ApplicationWindow {
         onRemoveRowRequested: function(path) { fileDetailsView.removeRow(path) }
     }
 
-    // Check for an already-connected Seestar on startup — the initial poll()
-    // fires in the C++ constructor before QML Connections are wired up.
     Component.onCompleted: {
         if (seestarService.hasMyWorks) {
             var myWorksPath = seestarService.mountPath + "/MyWorks"
@@ -495,7 +472,6 @@ ApplicationWindow {
         }
     }
 
-    // Auto-add/remove the Seestar MyWorks folder when the telescope connects.
     Connections {
         target: seestarService
         function onConnectedChanged() {

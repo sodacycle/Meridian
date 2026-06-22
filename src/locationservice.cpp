@@ -16,7 +16,6 @@ LocationService::LocationService(QObject *parent)
 
 void LocationService::requestLocation()
 {
-    // Try the OS location stack first (GeoClue2 on Linux, CoreLocation on macOS, etc.)
     if (!m_posSource) {
         m_posSource = QGeoPositionInfoSource::createDefaultSource(this);
         if (m_posSource) {
@@ -29,10 +28,8 @@ void LocationService::requestLocation()
 
     if (m_posSource) {
         setStatus("Requesting…");
-        // requestUpdate gives a single fix; 8-second timeout before errorOccurred fires.
         m_posSource->requestUpdate(8000);
     } else {
-        // Qt Positioning has no backend available on this system.
         tryIPFallback();
     }
 }
@@ -49,7 +46,6 @@ void LocationService::onPositionUpdated(const QGeoPositionInfo &info)
 void LocationService::onPositioningError(QGeoPositionInfoSource::Error error)
 {
     Q_UNUSED(error)
-    // System positioning unavailable or timed out — fall back to IP geolocation.
     if (!m_ipPending)
         tryIPFallback();
 }

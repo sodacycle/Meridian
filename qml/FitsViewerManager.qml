@@ -1,28 +1,16 @@
 import QtQuick
 import QtQuick.Controls
 
-// Logic-only controller that owns the FITS viewer window and all
-// rejection/navigation state.  main.qml binds displayRows and
-// transientParent, calls openFile(), and handles removeRowRequested().
 Item {
     id: manager
     width: 0; height: 0; visible: false
 
-    // ── Public API ────────────────────────────────────────────────────────────
-
-    // Bind to fileDetailsView.displayRows so navigation always uses the
-    // current (possibly filtered) file list.
     property var displayRows: []
 
-    // Forward to the inner Window so it appears as a child of the main window.
     property var transientParent: null
 
-    // Emitted whenever a row must be removed from the file list model.
-    // The caller (main.qml) handles the actual removeRow() call.
     signal removeRowRequested(string path)
 
-    // Open the viewer for the given file path.  The path is looked up in
-    // displayRows to set fileIndex / fileCount correctly.
     function openFile(path) {
         var rows = manager.displayRows
         var idx  = -1
@@ -34,7 +22,6 @@ Item {
         fitsViewer.isRejected = !!manager.rejectedSet[path]
         fitsViewer.openFile(path)
 
-        // Track viewed paths — maintain insertion order, no duplicates.
         var vp = manager.viewedPaths.slice()
         if (vp.indexOf(path) === -1) {
             vp.push(path)
@@ -42,17 +29,10 @@ Item {
         }
     }
 
-    // ── Internal state ────────────────────────────────────────────────────────
-
-    // Keys are file paths; a key's presence means the file is marked rejected
-    // for this session.  Files are not moved until Finalize is confirmed.
     property var rejectedSet: ({})
 
-    // Ordered list of paths that have been opened in the viewer this session.
     property var viewedPaths: []
 
-    // Pre-populate rejectedSet from persisted .mrj sidecars when the file list
-    // is (re)loaded after a scan.
     onDisplayRowsChanged: {
         var newSet = {}
         for (var i = 0; i < displayRows.length; i++) {
@@ -66,14 +46,12 @@ Item {
         fitsViewer.rejectedCount = Object.keys(newSet).length
     }
 
-    // ── Viewer window ─────────────────────────────────────────────────────────
     FitsImageViewer {
         id: fitsViewer
         transientParent: manager.transientParent
         viewedPaths:     manager.viewedPaths
         rejectedSet:     manager.rejectedSet
 
-        // File was deleted — viewer hides itself; we just clean up the lists.
         onFileDeleted: function(path) {
             organizer.writeSidecar(path, false)
             delete manager.rejectedSet[path]
@@ -82,7 +60,6 @@ Item {
             manager.removeRowRequested(path)
         }
 
-        // Toggle the rejected mark for the currently displayed image.
         onRequestToggleReject: {
             var path = fitsViewer.filePath
             if (manager.rejectedSet[path]) {
@@ -99,7 +76,6 @@ Item {
             fitsViewer.rejectedCount = Object.keys(manager.rejectedSet).length
         }
 
-        // Move all session-marked images then navigate to the next valid file.
         onFinalizeAccepted: {
             var paths = Object.keys(manager.rejectedSet)
             for (var i = 0; i < paths.length; i++) {
@@ -122,7 +98,6 @@ Item {
             }
         }
 
-        // Navigate to any thumbnail the user clicks.
         onRequestOpenPath: function(path) { manager.openFile(path) }
 
         onRequestPrevious: {

@@ -4,7 +4,6 @@
 
 QHash<QString, QVariant> FitsParser::parseHeader(const QString &filePath)
 {
-    // - Read the FITS header blocks until the END keyword is found -
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly))
         return {};
@@ -24,7 +23,6 @@ QHash<QString, QVariant> FitsParser::parseHeader(const QString &filePath)
     file.close();
 
     QHash<QString, QVariant> header;
-    // - Parse each 80-byte FITS card into a key/value pair -
     for (int i = 0; i < headerData.size(); i += 80) {
         QByteArray card = headerData.mid(i, 80);
         if (card.trimmed().isEmpty()) continue;

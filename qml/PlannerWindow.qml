@@ -19,22 +19,13 @@ Window {
     property int nightOffset: 0
     property var selectedObj: null
 
-    // Clock display for arc + list times: false = UTC (24-hour), true = the
-    // observing location's local time shown as 12-hour AM/PM. Session-only.
     property bool clockLocal: false
 
-    // Viewable sky window for narrowing the planning scope (session-only).
-    // The sky is split into 8 compass sectors (N, NE, E, SE, S, SW, W, NW),
-    // each spanning 45°.  A sector is true when that direction is unobstructed
-    // from the observing site.  An object counts as "in view" when its azimuth
-    // falls in an enabled sector AND its altitude ≥ viewMinAlt.
     property var  viewSectors: [true, true, true, true, true, true, true, true]
-    property real viewMinAlt:  15   // horizon-obstruction altitude floor
+    property real viewMinAlt:  15
     readonly property var  sectorNames: ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
     readonly property bool viewAreaActive: viewSectors.indexOf(false) >= 0 || viewMinAlt > 15
 
-    // When true, the Observable Objects list is restricted to objects that pass
-    // through an enabled sector above the altitude floor on the selected night.
     property bool viewFilterEnabled: false
 
     function toggleSector(i) {
@@ -53,7 +44,6 @@ Window {
     property int scheduleRevision: 0
     property bool showManualEntry: false
 
-    // Sort state for the Observable Objects list
     property string sortCol:    "Peak Alt"
     property bool   sortAsc:    false
     property string searchText: ""
@@ -82,7 +72,6 @@ Window {
             plannerWindow.sortAsc = !plannerWindow.sortAsc
         } else {
             plannerWindow.sortCol = col
-            // String columns default ascending; numeric columns default descending
             plannerWindow.sortAsc = (col === "Name" || col === "Type" || col === "Con")
         }
         plannerWindow.applySort()
@@ -110,7 +99,6 @@ Window {
         plannerWindow.showManualEntry = false
     }
 
-    // Date string ("yyyy-MM-dd") for the night currently shown in the list.
     readonly property string currentNightDateStr: {
         var d = new Date()
         d.setDate(d.getDate() + nightOffset)
@@ -120,22 +108,15 @@ Window {
         return y + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day
     }
 
-    // Calendar navigation state (follows nightOffset, also navigable independently)
     property int calendarYear:  (new Date()).getFullYear()
-    property int calendarMonth: (new Date()).getMonth() + 1  // 1–12
-
-    // ── Helpers ────────────────────────────────────────────────────────────────
+    property int calendarMonth: (new Date()).getMonth() + 1
 
     function localMidnightUTC() {
-        // Anchor the sky-arc window to the observing location's local time,
-        // derived from its longitude — NOT the computer's timezone — so the
-        // timeframe is correct even when the PC clock is in a different zone.
-        // Local mean solar time = UTC + longitude/15  ⇒  UTC = local − lon/15.
-        var now = new Date()
-        var da  = now.getDate() + nightOffset
-        var ms  = Date.UTC(now.getFullYear(), now.getMonth(), da, 23, 0, 0)
-                  - (longitude / 15.0) * 3600000
-        return new Date(ms)
+        var lonOffMs = (longitude / 15.0) * 3600000
+        var localNow = Date.now() + lonOffMs
+        var dayMs    = 86400000
+        return new Date(Math.floor(localNow / dayMs) * dayMs
+                        - lonOffMs + nightOffset * dayMs)
     }
 
     function nightLabel() {
@@ -145,8 +126,6 @@ Window {
         d.setDate(d.getDate() + nightOffset)
         return d.toLocaleDateString(Qt.locale(), "ddd d MMM")
     }
-
-    // ── Calendar math ─────────────────────────────────────────────────────────
 
     function daysInMonth(year, month) {
         return new Date(year, month, 0).getDate()
@@ -165,8 +144,6 @@ Window {
                 "July","August","September","October","November","December"][month - 1]
     }
 
-    // ── Formatters ────────────────────────────────────────────────────────────
-
     function fmtMag(mag)  { return (mag === undefined || mag === null || mag >= 99.0) ? "—" : mag.toFixed(1) }
     function fmtSize(sz)  {
         if (!sz || sz <= 0) return "—"
@@ -179,21 +156,18 @@ Window {
         var h = Math.floor(wH), m = Math.round((wH - h) * 60)
         return h + "h" + (m > 0 ? " " + m + "m" : "")
     }
-    // Format a UTC hour-of-day per the selected clock mode.
-    // UTC  → 24-hour "HH:MM"   |   Local → 12-hour "H:MM AM/PM" (UTC + lon/15).
     function fmtHHMM(h) {
         if (clockLocal) h += longitude / 15.0
-        var hh = ((Math.floor(h) % 24) + 24) % 24
-        var mm = Math.round((h - Math.floor(h)) * 60)
-        if (mm === 60) { hh = (hh + 1) % 24; mm = 0 }
+        var hour24 = ((Math.floor(h) % 24) + 24) % 24
+        var minute = Math.round((h - Math.floor(h)) * 60)
+        if (minute === 60) { hour24 = (hour24 + 1) % 24; minute = 0 }
         if (clockLocal) {
-            var ap  = hh < 12 ? "AM" : "PM"
-            var h12 = hh % 12; if (h12 === 0) h12 = 12
-            return h12 + ":" + (mm < 10 ? "0" : "") + mm + " " + ap
+            var ampm   = hour24 < 12 ? "AM" : "PM"
+            var hour12 = hour24 % 12; if (hour12 === 0) hour12 = 12
+            return hour12 + ":" + (minute < 10 ? "0" : "") + minute + " " + ampm
         }
-        return (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm
+        return (hour24 < 10 ? "0" : "") + hour24 + ":" + (minute < 10 ? "0" : "") + minute
     }
-    // Suffix / short label for the active clock mode.
     function clockSuffix() { return clockLocal ? "" : " UTC" }
     function clockLabel()  { return clockLocal ? "Local" : "UTC" }
     function fmtViewableUTC(circ, riseH, setH) {
@@ -201,8 +175,6 @@ Window {
         if (riseH === 0 && setH === 0) return "—"
         return fmtHHMM(riseH) + "–" + fmtHHMM(setH)
     }
-    // ── Session-length helpers ────────────────────────────────────────────────
-
     function recommendedSessionHours(type) {
         if (!type) return { min: 2, max: 5 }
         var t = type.toLowerCase()
@@ -227,8 +199,6 @@ Window {
         return h + "h" + (m > 0 ? " " + m + "m" : "")
     }
 
-    // Returns a red/yellow/green color based on observed vs recommended-minimum hours.
-    // < 50 % of min → red   |   50–99 % → yellow   |   ≥ 100 % → green
     function obsProgressColor(observedSeconds, type) {
         if (observedSeconds <= 0) return pal.placeholderText
         var recMin = recommendedSessionHours(type).min * 3600
@@ -238,32 +208,23 @@ Window {
         return "#ef5350"
     }
 
-    // ── Cardinal direction / viewable-area helpers ────────────────────────────
-
-    // 16-point compass abbreviation for a bearing in degrees from North.
     function compass16(az) {
         var pts = ["N","NNE","NE","ENE","E","ESE","SE","SSE",
                    "S","SSW","SW","WSW","W","WNW","NW","NNW"]
         return pts[Math.round(((az % 360) + 360) % 360 / 22.5) % 16]
     }
 
-    // Compass sector index (0=N, 1=NE, … 7=NW) for a bearing in degrees.
     function sectorOf(az) {
         return Math.round((((az % 360) + 360) % 360) / 45) % 8
     }
 
-    // Is the sky in this bearing's direction marked as viewable?
     function azInSweep(az) {
         return viewSectors[sectorOf(az)] === true
     }
 
-    // Object is observable from this site when its direction is unobstructed
-    // and it is above the obstruction altitude floor.
     function inView(az, alt) {
         return alt >= viewMinAlt && azInSweep(az)
     }
-
-    // ── Light pollution / observation time helpers ────────────────────────────
 
     function bortleColor(b) {
         if (b <= 0) return pal.mid
@@ -301,8 +262,6 @@ Window {
         if (!weatherService.celsius) return (celsius * 9 / 5 + 32).toFixed(0) + "°F"
         return celsius.toFixed(0) + "°C"
     }
-
-    // ── Reactivity ────────────────────────────────────────────────────────────
 
     onNightOffsetChanged: {
         var d = new Date()
@@ -366,8 +325,6 @@ Window {
         }
     }
 
-    // ── Header ────────────────────────────────────────────────────────────────
-
     Rectangle {
         id: headerBar
         anchors { top: parent.top; left: parent.left; right: parent.right }
@@ -386,7 +343,6 @@ Window {
 
             Rectangle { width: 1; height: 28; color: pal.mid; anchors.verticalCenter: parent.verticalCenter }
 
-            // Location display
             Column {
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 1
@@ -450,13 +406,9 @@ Window {
         }
     }
 
-    // ── Body ─────────────────────────────────────────────────────────────────
-
     Item {
         id: body
         anchors { top: headerBar.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
-
-        // ── Manual location entry bar (slides in below header) ────────────────
 
         Rectangle {
             id: manualEntryBar
@@ -529,8 +481,6 @@ Window {
             }
         }
 
-        // ── Observation summary band (between detail panel and calendar) ────────
-
         Rectangle {
             id: obsBar
             anchors { left: parent.left; right: parent.right; bottom: calSection.top }
@@ -540,7 +490,6 @@ Window {
 
             Behavior on height { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
 
-            // top separator line
             Rectangle {
                 anchors { top: parent.top; left: parent.left; right: parent.right }
                 height: 1; color: pal.mid
@@ -552,7 +501,6 @@ Window {
                 spacing: 0
                 visible: plannerWindow.selectedObj !== null
 
-                // ── Left: recommended session length ─────────────────────────
                 Item {
                     width: parent.width / 2 - 1
                     height: parent.height
@@ -606,10 +554,8 @@ Window {
                     }
                 }
 
-                // vertical divider
                 Rectangle { width: 1; height: parent.height; color: pal.mid; anchors.verticalCenter: parent.verticalCenter }
 
-                // ── Right: observed to date (from FITS data) ─────────────────
                 Item {
                     width: parent.width / 2 - 1
                     height: parent.height
@@ -653,7 +599,6 @@ Window {
                             }
                         }
 
-                        // Progress bar: observed / recommended-minimum
                         Item {
                             width: parent.width; height: 8
 
@@ -685,12 +630,9 @@ Window {
             }
         }
 
-        // ── Full-width calendar at the bottom ─────────────────────────────────
-
         Item {
             id: calSection
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            // Height grows with scheduled objects; rows expand to show names.
             height: calTopBorder.height + calNav.height + calDayNames.height + calGrid.totalHeight
 
             Rectangle {
@@ -699,7 +641,6 @@ Window {
                 height: 1; color: pal.mid
             }
 
-            // Month nav: "‹  June 2026  ›"
             Row {
                 id: calNav
                 anchors { top: calTopBorder.bottom; left: parent.left; right: parent.right }
@@ -733,7 +674,6 @@ Window {
                 }
             }
 
-            // Day-of-week header
             Row {
                 id: calDayNames
                 anchors { top: calNav.bottom; left: parent.left; right: parent.right }
@@ -749,7 +689,6 @@ Window {
                 }
             }
 
-            // Grid — rows grow to show scheduled object names
             Item {
                 id: calGrid
                 anchors { top: calDayNames.bottom; left: parent.left; right: parent.right }
@@ -759,37 +698,34 @@ Window {
                 readonly property real cellW: width / 7
                 readonly property int numWeeks: plannerWindow.weeksInMonth(plannerWindow.calendarYear, plannerWindow.calendarMonth)
 
-                // Per-row heights: 42px base + 13px per scheduled object name (max 5 shown).
-                // Each row takes the height needed by its most-scheduled cell.
                 readonly property var rowHeights: {
-                    var _sr = plannerWindow.scheduleRevision
-                    var cy  = plannerWindow.calendarYear
-                    var cm  = plannerWindow.calendarMonth
-                    var nw  = plannerWindow.weeksInMonth(cy, cm)
-                    var fw  = plannerWindow.firstWeekdayOfMonth(cy, cm)
-                    var dim = plannerWindow.daysInMonth(cy, cm)
+                    var _sr          = plannerWindow.scheduleRevision
+                    var year         = plannerWindow.calendarYear
+                    var month        = plannerWindow.calendarMonth
+                    var numWeeks     = plannerWindow.weeksInMonth(year, month)
+                    var firstWeekday = plannerWindow.firstWeekdayOfMonth(year, month)
+                    var daysInMonth  = plannerWindow.daysInMonth(year, month)
                     var heights = []
-                    for (var r = 0; r < nw; r++) {
-                        var maxObjs = 0
-                        for (var c = 0; c < 7; c++) {
-                            var dn = r * 7 + c - fw + 1
-                            if (dn >= 1 && dn <= dim) {
-                                var ds = cy + "-" + (cm < 10 ? "0" : "") + cm
-                                             + "-" + (dn < 10 ? "0" : "") + dn
-                                var n = schedulerService.countForDate(ds)
-                                if (n > maxObjs) maxObjs = n
+                    for (var week = 0; week < numWeeks; week++) {
+                        var maxScheduled = 0
+                        for (var weekday = 0; weekday < 7; weekday++) {
+                            var dayNum = week * 7 + weekday - firstWeekday + 1
+                            if (dayNum >= 1 && dayNum <= daysInMonth) {
+                                var dateStr = year + "-" + (month < 10 ? "0" : "") + month
+                                                   + "-" + (dayNum < 10 ? "0" : "") + dayNum
+                                var count = schedulerService.countForDate(dateStr)
+                                if (count > maxScheduled) maxScheduled = count
                             }
                         }
-                        heights.push(42 + Math.min(maxObjs, 5) * 13)
+                        heights.push(42 + Math.min(maxScheduled, 5) * 13)
                     }
                     return heights
                 }
 
-                // Cumulative y offsets: rowOffsets[i] = top of row i
                 readonly property var rowOffsets: {
-                    var h = rowHeights; var o = [0]
-                    for (var i = 0; i < h.length; i++) o.push(o[i] + h[i])
-                    return o
+                    var heights = rowHeights; var offsets = [0]
+                    for (var i = 0; i < heights.length; i++) offsets.push(offsets[i] + heights[i])
+                    return offsets
                 }
 
                 readonly property real totalHeight: rowOffsets.length > 1
@@ -862,7 +798,6 @@ Window {
                             anchors { fill: parent; margins: 3 }
                             opacity: isPast ? 0.5 : 1.0
 
-                            // Day number (top-left)
                             Text {
                                 id: cellDayNum
                                 anchors { top: parent.top; left: parent.left }
@@ -871,7 +806,6 @@ Window {
                                 color: isSelected ? pal.highlightedText : pal.windowText
                             }
 
-                            // Moon phase (top-right)
                             Text {
                                 anchors { top: parent.top; right: parent.right }
                                 text: {
@@ -882,7 +816,6 @@ Window {
                                 font.pixelSize: 12
                             }
 
-                            // Scheduled object names (below day number)
                             Column {
                                 anchors { top: cellDayNum.bottom; topMargin: 1; left: parent.left; right: parent.right }
                                 spacing: 0
@@ -917,7 +850,6 @@ Window {
                                 }
                             }
 
-                            // Weather (bottom-left)
                             Text {
                                 anchors { bottom: parent.bottom; left: parent.left }
                                 text: (wd && wd.valid)
@@ -943,23 +875,16 @@ Window {
             }
         }
 
-        // ── Top section: list + detail, above the calendar ────────────────────
-
         Item {
             id: topSection
             anchors { top: manualEntryBar.bottom; left: parent.left; right: parent.right; bottom: obsBar.top }
 
-            // ── Left panel: object list ───────────────────────────────────────
-
             Item {
                 id: listPanel
                 anchors { top: parent.top; left: parent.left; bottom: parent.bottom }
-                // Never wider than the rightmost column: left margin (12) + the eight
-                // column widths (626) + room for the scrollbar (16).
                 readonly property int contentWidth: 12 + 626 + 16
                 width: Math.min(parent.width * 0.55, contentWidth)
 
-                // Title row: "Observable Objects" + search box on the right
                 Item {
                     id: listTitleRow
                     anchors { top: parent.top; topMargin: 8; left: parent.left; leftMargin: 12; right: parent.right; rightMargin: 12 }
@@ -971,7 +896,6 @@ Window {
                         font.pixelSize: 13; font.bold: true; color: pal.windowText
                     }
 
-                    // Search box
                     Rectangle {
                         id: searchBox
                         anchors { right: parent.right; verticalCenter: parent.verticalCenter }
@@ -980,7 +904,6 @@ Window {
                         border.color: searchField.activeFocus ? pal.highlight : pal.mid
                         border.width: searchField.activeFocus ? 2 : 1
 
-                        // ⌕ icon
                         Text {
                             id: searchIcon
                             anchors { left: parent.left; leftMargin: 7; verticalCenter: parent.verticalCenter }
@@ -1005,7 +928,6 @@ Window {
                             onTextChanged: plannerWindow.searchText = text
                         }
 
-                        // ✕ clear button
                         Text {
                             id: clearSearchBtn
                             anchors { right: parent.right; rightMargin: 7; verticalCenter: parent.verticalCenter }
@@ -1019,7 +941,6 @@ Window {
                         }
                     }
 
-                    // Clock display toggle: UTC (24h) vs the location's local AM/PM.
                     Row {
                         id: clockToggle
                         anchors { right: searchBox.left; rightMargin: 10; verticalCenter: parent.verticalCenter }
@@ -1052,7 +973,6 @@ Window {
                     }
                 }
 
-                // Column headers (clickable — click to sort, click again to reverse)
                 Row {
                     id: listHeader
                     anchors { top: listTitleRow.bottom; topMargin: 2; left: parent.left; leftMargin: 12 }
@@ -1108,7 +1028,6 @@ Window {
                     }
                 }
 
-                // Scrollable object list
                 ListView {
                     id: objList
                     anchors {
@@ -1171,7 +1090,6 @@ Window {
                                          : (row.index % 2 === 0 ? pal.alternateBase : "transparent")))
                         }
 
-                        // Scheduled indicator dot (left edge)
                         Rectangle {
                             anchors { left: parent.left; leftMargin: 3; verticalCenter: parent.verticalCenter }
                             width: 6; height: 6; radius: 3
@@ -1181,7 +1099,6 @@ Window {
 
                         Row {
                             anchors.fill: parent; spacing: 0
-                            // 10px indent so dot doesn't overlap text
                             Item { width: 10; height: 28 }
                             Text { width: 110; height: 28; leftPadding: 6
                                    text: row.commonName !== "" ? row.commonName : row.name
@@ -1236,7 +1153,6 @@ Window {
                     }
                 }
 
-                // Add / Remove buttons (bottom-right of list panel)
                 Row {
                     id: listButtons
                     anchors { bottom: parent.bottom; right: parent.right; rightMargin: 12; bottomMargin: 8 }
@@ -1274,22 +1190,16 @@ Window {
                 }
             }
 
-            // Divider
             Rectangle {
                 id: divider
                 anchors { top: parent.top; bottom: parent.bottom; left: listPanel.right }
                 width: 1; color: pal.mid
             }
 
-            // ── Detail panel (right ~45 %) ────────────────────────────────────
-
             Item {
                 anchors { top: parent.top; left: divider.right; right: parent.right; bottom: parent.bottom }
                 clip: true
 
-                // Scroll the whole detail panel (like the FITS viewer) so the Sky Arc
-                // keeps a usable minimum size on any window — scrollbars appear when the
-                // content is taller or wider than the available space.
                 Flickable {
                     id: detailFlick
                     anchors.fill: parent
@@ -1303,7 +1213,7 @@ Window {
                     Column {
                         id: detailColumn
                         x: 18; y: 18
-                        width: Math.max(detailFlick.width - 36, 360)   // minimum content width
+                        width: Math.max(detailFlick.width - 36, 360)
                         spacing: 12
                         property var obj: plannerWindow.selectedObj || {}
 
@@ -1346,7 +1256,6 @@ Window {
                         }
                     }
 
-                    // Stats + Wikipedia thumbnail side-by-side
                     Item {
                         width: parent.width
                         height: Math.max(statsGrid.implicitHeight, wikiThumb.visible ? wikiThumb.height : 0)
@@ -1386,7 +1295,6 @@ Window {
                                    color: pal.windowText; font.pixelSize: 12 }
                         }
 
-                        // Wikipedia thumbnail — right of stats, vertically centred
                         Image {
                             id: wikiThumb
                             anchors {
@@ -1420,8 +1328,8 @@ Window {
 
                     Canvas {
                         id: skyCanvas
-                        width: parent.width                 // ≥ 360 via detailColumn min width
-                        height: 240                         // fixed minimum; panel scrolls if needed
+                        width: parent.width
+                        height: 240
                         visible: !!plannerWindow.selectedObj
                         onVisibleChanged: if (visible) Qt.callLater(requestPaint)
 
@@ -1453,40 +1361,35 @@ Window {
                             var lat  = plannerWindow.latitude
                             var lon  = plannerWindow.longitude
                             var padL = 26, padR = 8
-                            var stripH = 13                         // compass strip under the axis
-                            var cy   = height - 16 - stripH
-                            var rTop = cy - 4                       // pixels for 0°→90° altitude
+                            var compassStripH = 13
+                            var horizonY = height - 16 - compassStripH
+                            var altScale = horizonY - 4
                             var plotW = Math.max(1, width - padL - padR)
 
                             var midnight = plannerWindow.localMidnightUTC()
                             var jdMid    = plannerService.toJD(midnight.getTime())
                             var lstMid   = plannerService.lst(jdMid, lon)
 
-                            // Approximate sun altitude at a given JD (±1° accuracy)
                             function sunAlt(jd) {
-                                var T   = (jd - 2451545.0) / 36525.0
-                                var M   = (357.52911 + 35999.05029 * T) * Math.PI / 180
-                                var lam = (280.46646 + 36000.76983 * T
-                                           + (1.914602 - 0.004817 * T) * Math.sin(M)
-                                           + 0.019993 * Math.sin(2 * M)) * Math.PI / 180
-                                var eps = (23.439291 - 0.013004 * T) * Math.PI / 180
-                                var raH = (Math.atan2(Math.cos(eps) * Math.sin(lam), Math.cos(lam))
+                                var T          = (jd - 2451545.0) / 36525.0
+                                var meanAnom   = (357.52911 + 35999.05029 * T) * Math.PI / 180
+                                var eclipLon   = (280.46646 + 36000.76983 * T
+                                                  + (1.914602 - 0.004817 * T) * Math.sin(meanAnom)
+                                                  + 0.019993 * Math.sin(2 * meanAnom)) * Math.PI / 180
+                                var obliquity  = (23.439291 - 0.013004 * T) * Math.PI / 180
+                                var raH = (Math.atan2(Math.cos(obliquity) * Math.sin(eclipLon), Math.cos(eclipLon))
                                            * 180 / Math.PI / 15 + 24) % 24
-                                var dec = Math.asin(Math.sin(eps) * Math.sin(lam)) * 180 / Math.PI
+                                var dec = Math.asin(Math.sin(obliquity) * Math.sin(eclipLon)) * 180 / Math.PI
                                 return plannerService.altitudeDeg(raH, dec, lat, plannerService.lst(jd, lon))
                             }
 
-                            // UTC time string from hour offset around midnight
-                            // Clock label for an hour offset around the reference midnight,
-                            // honouring the UTC / local-AM·PM toggle.
-                            function toUTC(h) {
+                            function clockAt(h) {
                                 var t = new Date(midnight.getTime() + h * 3600000)
                                 var utcH = t.getUTCHours() + t.getUTCMinutes() / 60.0
                                          + t.getUTCSeconds() / 3600.0
                                 return plannerWindow.fmtHHMM(utcH)
                             }
 
-                            // Object altitude / azimuth at an hour offset around midnight
                             function altAt(h) {
                                 return plannerService.altitudeDeg(o.raHours, o.decDeg, lat,
                                                                   plannerService.lst(jdMid + h / 24.0, lon))
@@ -1495,206 +1398,187 @@ Window {
                                 return plannerService.azimuthDeg(o.raHours, o.decDeg, lat,
                                                                  plannerService.lst(jdMid + h / 24.0, lon))
                             }
+                            function yForAlt(alt) { return horizonY - (alt / 90.0) * altScale }
 
-                            // ── Night window: fixed 18:00–06:00 local time ────────────────
-                            // Always centred on local midnight with ±6 hour half-window.
                             var hStart = -6, hEnd = 6
                             var span = hEnd - hStart
                             function xOf(h) { return padL + (h - hStart) / span * plotW }
 
-                            // ── Twilight shading ──────────────────────────────────────────
-                            var nSh = Math.max(48, Math.round(plotW / 2))
-                            for (var s = 0; s < nSh; s++) {
-                                var hA = hStart + span * s / nSh
-                                var hB = hStart + span * (s + 1) / nSh
-                                var sa = sunAlt(jdMid + (hA + hB) / 2 / 24.0)
-                                var col = null
-                                if      (sa >= 0)   col = "rgba(160,110,50,0.20)"
-                                else if (sa >= -6)  col = "rgba(160,100,40,0.13)"
-                                else if (sa >= -12) col = "rgba(60,80,140,0.10)"
-                                else if (sa >= -18) col = "rgba(30,50,100,0.07)"
-                                if (col) { ctx.fillStyle = col; ctx.fillRect(xOf(hA), 0, xOf(hB) - xOf(hA) + 0.5, cy) }
+                            var shadeSteps = Math.max(48, Math.round(plotW / 2))
+                            for (var i = 0; i < shadeSteps; i++) {
+                                var segStartH = hStart + span * i / shadeSteps
+                                var segEndH   = hStart + span * (i + 1) / shadeSteps
+                                var sa = sunAlt(jdMid + (segStartH + segEndH) / 2 / 24.0)
+                                var twilightColor = null
+                                if      (sa >= 0)   twilightColor = "rgba(160,110,50,0.20)"
+                                else if (sa >= -6)  twilightColor = "rgba(160,100,40,0.13)"
+                                else if (sa >= -12) twilightColor = "rgba(60,80,140,0.10)"
+                                else if (sa >= -18) twilightColor = "rgba(30,50,100,0.07)"
+                                if (twilightColor) {
+                                    ctx.fillStyle = twilightColor
+                                    ctx.fillRect(xOf(segStartH), 0, xOf(segEndH) - xOf(segStartH) + 0.5, horizonY)
+                                }
                             }
 
-                            // ── Viewable-area shading ─────────────────────────────────────
-                            // Dim the times the object's azimuth falls outside the sweep, and
-                            // the altitude band below the horizon-obstruction floor.
                             if (plannerWindow.viewSectors.indexOf(false) >= 0) {
-                                for (var sv = 0; sv < nSh; sv++) {
-                                    var hAz = hStart + span * (sv + 0.5) / nSh
-                                    if (!plannerWindow.azInSweep(azAt(hAz))) {
+                                for (var j = 0; j < shadeSteps; j++) {
+                                    var sampleH = hStart + span * (j + 0.5) / shadeSteps
+                                    if (!plannerWindow.azInSweep(azAt(sampleH))) {
                                         ctx.fillStyle = "rgba(150,90,90,0.11)"
-                                        ctx.fillRect(xOf(hStart + span * sv / nSh), 0,
-                                                     plotW / nSh + 0.5, cy)
+                                        ctx.fillRect(xOf(hStart + span * j / shadeSteps), 0,
+                                                     plotW / shadeSteps + 0.5, horizonY)
                                     }
                                 }
                             }
                             if (plannerWindow.viewMinAlt > 15) {
-                                var yFloorBand = cy - (plannerWindow.viewMinAlt / 90.0) * rTop
+                                var floorBandY = yForAlt(plannerWindow.viewMinAlt)
                                 ctx.fillStyle = "rgba(150,90,90,0.09)"
-                                ctx.fillRect(padL, yFloorBand, plotW, cy - yFloorBand)
+                                ctx.fillRect(padL, floorBandY, plotW, horizonY - floorBandY)
                             }
 
-                            // ── Horizon baseline ──────────────────────────────────────────
                             ctx.strokeStyle = pal.mid.toString()
                             ctx.lineWidth = 1; ctx.setLineDash([])
-                            ctx.beginPath(); ctx.moveTo(padL, cy); ctx.lineTo(width - padR, cy); ctx.stroke()
+                            ctx.beginPath(); ctx.moveTo(padL, horizonY); ctx.lineTo(width - padR, horizonY); ctx.stroke()
 
-                            // ── Altitude grid lines ───────────────────────────────────────
                             ctx.font = "10px sans-serif"
                             ctx.fillStyle = pal.placeholderText.toString()
                             ctx.textAlign = "left"
 
-                            // 15° planning limit
-                            var y15 = cy - (15.0 / 90.0) * rTop
+                            var planningLimitY = yForAlt(15.0)
                             ctx.strokeStyle = pal.mid.toString()
                             ctx.setLineDash([2, 6]); ctx.lineWidth = 0.5
-                            ctx.beginPath(); ctx.moveTo(padL, y15); ctx.lineTo(width - padR, y15); ctx.stroke()
-                            ctx.fillText("15°", 2, y15 + 4)
+                            ctx.beginPath(); ctx.moveTo(padL, planningLimitY); ctx.lineTo(width - padR, planningLimitY); ctx.stroke()
+                            ctx.fillText("15°", 2, planningLimitY + 4)
 
-                            for (var alt = 30; alt <= 80; alt += 30) {
-                                var ytick = cy - (alt / 90.0) * rTop
+                            for (var gridAlt = 30; gridAlt <= 80; gridAlt += 30) {
+                                var gridY = yForAlt(gridAlt)
                                 ctx.setLineDash([2, 4]); ctx.lineWidth = 0.5
                                 ctx.strokeStyle = pal.mid.toString()
-                                ctx.beginPath(); ctx.moveTo(padL, ytick); ctx.lineTo(width - padR, ytick); ctx.stroke()
-                                ctx.fillText(alt + "°", 2, ytick + 4)
+                                ctx.beginPath(); ctx.moveTo(padL, gridY); ctx.lineTo(width - padR, gridY); ctx.stroke()
+                                ctx.fillText(gridAlt + "°", 2, gridY + 4)
                             }
                             ctx.setLineDash([])
 
-                            // ── Viewable min-altitude floor line ──────────────────────────
                             if (plannerWindow.viewMinAlt > 15) {
-                                var yFl = cy - (plannerWindow.viewMinAlt / 90.0) * rTop
+                                var floorLineY = yForAlt(plannerWindow.viewMinAlt)
                                 ctx.strokeStyle = "rgba(210,130,130,0.9)"
                                 ctx.setLineDash([4, 4]); ctx.lineWidth = 1
-                                ctx.beginPath(); ctx.moveTo(padL, yFl); ctx.lineTo(width - padR, yFl); ctx.stroke()
+                                ctx.beginPath(); ctx.moveTo(padL, floorLineY); ctx.lineTo(width - padR, floorLineY); ctx.stroke()
                                 ctx.setLineDash([])
                                 ctx.fillStyle = pal.placeholderText.toString(); ctx.textAlign = "left"
-                                ctx.fillText(plannerWindow.viewMinAlt.toFixed(0) + "°", 2, yFl - 2)
+                                ctx.fillText(plannerWindow.viewMinAlt.toFixed(0) + "°", 2, floorLineY - 2)
                             }
 
-                            // ── Hourly grid + time axis labels ────────────────────────────
                             ctx.fillStyle = pal.placeholderText.toString()
                             ctx.font = "10px sans-serif"
-                            var hStep  = span > 14 ? 2 : 1
-                            var firstH = Math.ceil(hStart), lastH = Math.floor(hEnd)
-                            for (var hh = firstH; hh <= lastH; hh += hStep) {
-                                var hx = xOf(hh)
+                            var hourStep = span > 14 ? 2 : 1
+                            var firstHour = Math.ceil(hStart), lastHour = Math.floor(hEnd)
+                            for (var labelH = firstHour; labelH <= lastHour; labelH += hourStep) {
+                                var labelX = xOf(labelH)
                                 ctx.strokeStyle = pal.mid.toString()
                                 ctx.setLineDash([2, 5]); ctx.lineWidth = 0.5
-                                ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, cy); ctx.stroke()
+                                ctx.beginPath(); ctx.moveTo(labelX, 0); ctx.lineTo(labelX, horizonY); ctx.stroke()
                                 ctx.setLineDash([])
-                                ctx.textAlign = (hh === firstH) ? "left" : (hh === lastH ? "right" : "center")
-                                ctx.fillText(toUTC(hh), hx, cy + 11)
+                                ctx.textAlign = (labelH === firstHour) ? "left" : (labelH === lastHour ? "right" : "center")
+                                ctx.fillText(clockAt(labelH), labelX, horizonY + 11)
                             }
 
-                            // ── Compass strip: object bearing through the night ───────────
                             ctx.font = "9px sans-serif"
                             ctx.textAlign = "center"
-                            for (var hc = firstH; hc <= lastH; hc += hStep) {
-                                var altc = altAt(hc)
-                                if (altc < 0) continue                 // below horizon — nothing to point at
-                                var azc = azAt(hc)
-                                ctx.fillStyle = plannerWindow.inView(azc, altc) ? pal.highlight.toString()
-                                                                               : pal.placeholderText.toString()
-                                ctx.fillText(plannerWindow.compass16(azc), xOf(hc), cy + 24)
+                            for (var compassH = firstHour; compassH <= lastHour; compassH += hourStep) {
+                                var compassAlt = altAt(compassH)
+                                if (compassAlt < 0) continue
+                                var compassAz = azAt(compassH)
+                                ctx.fillStyle = plannerWindow.inView(compassAz, compassAlt) ? pal.highlight.toString()
+                                                                                            : pal.placeholderText.toString()
+                                ctx.fillText(plannerWindow.compass16(compassAz), xOf(compassH), horizonY + 24)
                             }
 
-                            // ── Meridian crossing ─────────────────────────────────────────
-                            // Transit when HA = 0 → LST = RA; use sidereal rate ≈ 15°/hr
-                            var dLST      = ((o.raHours * 15.0 - lstMid) % 360 + 360) % 360
-                            if (dLST > 180) dLST -= 360
-                            var hTransit   = dLST / 15.0
-                            var showTransit = hTransit >= hStart && hTransit <= hEnd
-                            var pxTransit  = xOf(hTransit)
-                            var altTransit = -999
+                            var lstToTransit = ((o.raHours * 15.0 - lstMid) % 360 + 360) % 360
+                            if (lstToTransit > 180) lstToTransit -= 360
+                            var transitH    = lstToTransit / 15.0
+                            var showTransit = transitH >= hStart && transitH <= hEnd
+                            var transitX    = xOf(transitH)
+                            var transitAlt  = -999
                             if (showTransit) {
-                                altTransit = altAt(hTransit)
-                                if (altTransit >= 15) {
+                                transitAlt = altAt(transitH)
+                                if (transitAlt >= 15) {
                                     ctx.strokeStyle = pal.mid.toString()
                                     ctx.setLineDash([3, 5]); ctx.lineWidth = 1
                                     ctx.beginPath()
-                                    ctx.moveTo(pxTransit, 0); ctx.lineTo(pxTransit, cy)
+                                    ctx.moveTo(transitX, 0); ctx.lineTo(transitX, horizonY)
                                     ctx.stroke(); ctx.setLineDash([])
                                 }
                             }
 
-                            // ── Object arc (night only, segmented by in-view) ─────────────
-                            // Solid highlight where the object is inside the viewable area,
-                            // dimmed where its azimuth/altitude falls outside it.
                             var riseX = -1, riseH = 0
                             var setX  = -1, setH  = 0
-                            var prevAlt = null, prevPx = null, prevPy = null, prevH = null
-                            var nArc = 180
-                            var hiCol  = pal.highlight.toString()
-                            var dimCol = pal.placeholderText.toString()
+                            var prevAlt = null, prevX = null, prevY = null, prevH = null
+                            var arcSteps = 180
+                            var inViewColor    = pal.highlight.toString()
+                            var outOfViewColor = pal.placeholderText.toString()
 
-                            for (var step = 0; step <= nArc; step++) {
-                                var h    = hStart + span * step / nArc
-                                var altH = altAt(h)
-                                var px   = xOf(h)
-                                var py   = cy - (altH / 90.0) * rTop
+                            for (var step = 0; step <= arcSteps; step++) {
+                                var h   = hStart + span * step / arcSteps
+                                var alt = altAt(h)
+                                var x   = xOf(h)
+                                var y   = yForAlt(alt)
 
                                 if (prevAlt !== null) {
-                                    // rise/set crossings at the 15° planning limit
-                                    if (prevAlt < 15.0 && altH >= 15.0) {
-                                        var fR = (15.0 - prevAlt) / (altH - prevAlt)
-                                        riseX = prevPx + fR * (px - prevPx)
-                                        riseH = prevH  + fR * (h - prevH)
-                                    } else if (prevAlt >= 15.0 && altH < 15.0) {
-                                        var fS = (prevAlt - 15.0) / (prevAlt - altH)
-                                        setX = prevPx + fS * (px - prevPx)
-                                        setH = prevH  + fS * (h - prevH)
+                                    if (prevAlt < 15.0 && alt >= 15.0) {
+                                        var riseFrac = (15.0 - prevAlt) / (alt - prevAlt)
+                                        riseX = prevX + riseFrac * (x - prevX)
+                                        riseH = prevH + riseFrac * (h - prevH)
+                                    } else if (prevAlt >= 15.0 && alt < 15.0) {
+                                        var setFrac = (prevAlt - 15.0) / (prevAlt - alt)
+                                        setX = prevX + setFrac * (x - prevX)
+                                        setH = prevH + setFrac * (h - prevH)
                                     }
-                                    // draw the segment only where both ends clear the limit
-                                    if (prevAlt >= 15.0 && altH >= 15.0) {
-                                        var inv = plannerWindow.inView(azAt(h), altH)
+                                    if (prevAlt >= 15.0 && alt >= 15.0) {
+                                        var segInView = plannerWindow.inView(azAt(h), alt)
                                         ctx.beginPath()
-                                        ctx.moveTo(prevPx, prevPy); ctx.lineTo(px, py)
-                                        ctx.strokeStyle = inv ? hiCol : dimCol
-                                        ctx.lineWidth   = inv ? 2.5 : 1.3
+                                        ctx.moveTo(prevX, prevY); ctx.lineTo(x, y)
+                                        ctx.strokeStyle = segInView ? inViewColor : outOfViewColor
+                                        ctx.lineWidth   = segInView ? 2.5 : 1.3
                                         ctx.stroke()
                                     }
                                 }
-                                prevAlt = altH; prevPx = px; prevPy = py; prevH = h
+                                prevAlt = alt; prevX = x; prevY = y; prevH = h
                             }
 
-                            // ── Midnight dot ──────────────────────────────────────────────
-                            var altMid = altAt(0)
-                            if (altMid >= 15.0 && hStart <= 0 && hEnd >= 0) {
-                                ctx.fillStyle = plannerWindow.inView(azAt(0), altMid) ? hiCol : dimCol
+                            var midnightAlt = altAt(0)
+                            if (midnightAlt >= 15.0 && hStart <= 0 && hEnd >= 0) {
+                                ctx.fillStyle = plannerWindow.inView(azAt(0), midnightAlt) ? inViewColor : outOfViewColor
                                 ctx.beginPath()
-                                ctx.arc(xOf(0), cy - (altMid / 90.0) * rTop, 4, 0, 2 * Math.PI)
+                                ctx.arc(xOf(0), yForAlt(midnightAlt), 4, 0, 2 * Math.PI)
                                 ctx.fill()
                             }
 
-                            // ── Transit / peak annotation (with bearing) ──────────────────
-                            if (showTransit && altTransit >= 15) {
-                                var pyTransit = cy - (altTransit / 90.0) * rTop
+                            if (showTransit && transitAlt >= 15) {
+                                var transitLabelY = yForAlt(transitAlt)
                                 ctx.font = "10px sans-serif"
                                 ctx.fillStyle = pal.placeholderText.toString()
                                 ctx.textAlign = "center"
-                                ctx.fillText(altTransit.toFixed(0) + "°  ·  " + toUTC(hTransit)
-                                             + "  " + plannerWindow.compass16(azAt(hTransit)),
-                                             pxTransit, Math.max(pyTransit - 7, 11))
+                                ctx.fillText(transitAlt.toFixed(0) + "°  ·  " + clockAt(transitH)
+                                             + "  " + plannerWindow.compass16(azAt(transitH)),
+                                             transitX, Math.max(transitLabelY - 7, 11))
                             }
 
-                            // ── Rise / set annotations (with bearing) ─────────────────────
                             ctx.font = "10px sans-serif"
                             ctx.fillStyle = pal.placeholderText.toString()
                             if (riseX >= 0) {
                                 ctx.textAlign = riseX < padL + plotW * 0.2 ? "left" : "center"
-                                ctx.fillText("▲ " + toUTC(riseH) + " " + plannerWindow.compass16(azAt(riseH)),
-                                             Math.max(riseX, padL), cy - 5)
+                                ctx.fillText("▲ " + clockAt(riseH) + " " + plannerWindow.compass16(azAt(riseH)),
+                                             Math.max(riseX, padL), horizonY - 5)
                             }
                             if (setX >= 0) {
                                 ctx.textAlign = setX > padL + plotW * 0.8 ? "right" : "center"
-                                ctx.fillText("▼ " + toUTC(setH) + " " + plannerWindow.compass16(azAt(setH)),
-                                             Math.min(setX, width - padR), cy - 5)
+                                ctx.fillText("▼ " + clockAt(setH) + " " + plannerWindow.compass16(azAt(setH)),
+                                             Math.min(setX, width - padR), horizonY - 5)
                             }
                         }
                     }
 
-                    // Placeholder shown in the object area until something is selected.
                     Text {
                         width: parent.width
                         text: "Select an object to see its sky arc and details."
@@ -1703,8 +1587,6 @@ Window {
                         visible: !plannerWindow.selectedObj
                     }
 
-                    // ── Bottom info row: light pollution + recommended time ────
-
                     Rectangle { width: parent.width; height: 1; color: pal.mid }
 
                     Row {
@@ -1712,7 +1594,6 @@ Window {
                         height: 104
                         spacing: 0
 
-                        // ── Left: Light pollution / Bortle scale ─────────────
                         Item {
                             width: parent.width / 2 - 1
                             height: parent.height
@@ -1726,7 +1607,6 @@ Window {
                                     font.pixelSize: 11; font.bold: true; color: pal.placeholderText
                                 }
 
-                                // 9 Bortle-class dots
                                 Row {
                                     spacing: 4
                                     Repeater {
@@ -1776,10 +1656,8 @@ Window {
                             }
                         }
 
-                        // vertical divider
                         Rectangle { width: 1; height: parent.height; color: pal.mid }
 
-                        // ── Right: Recommended observation time ───────────────
                         Item {
                             width: parent.width / 2 - 1
                             height: parent.height
@@ -1793,7 +1671,6 @@ Window {
                                     font.pixelSize: 11; font.bold: true; color: pal.placeholderText
                                 }
 
-                                // parent → right-half Item → Row → outer Column (has obj)
                                 property var o: parent.parent.parent.obj || {}
 
                                 Grid {
@@ -1839,10 +1716,6 @@ Window {
                         }
                     }
 
-                    // ── Viewable-area controls: narrow the planning scope ─────────
-                    // Always visible (independent of the selected object), shown below
-                    // the light-pollution panel: toggle the compass directions you can
-                    // see, set the obstruction floor, and optionally filter the list.
                     Rectangle { width: parent.width; height: 1; color: pal.mid }
 
                     Column {

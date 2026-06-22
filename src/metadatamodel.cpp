@@ -2,10 +2,6 @@
 #include <QSet>
 #include <algorithm>
 
-// - Implementation of models that expose metadata, targets, calibrations, and catalog data to QML -
-
-// ---- MetadataTableModel ----
-
 MetadataTableModel::MetadataTableModel(QObject *parent) : QAbstractListModel(parent) {}
 
 int MetadataTableModel::rowCount(const QModelIndex &parent) const
@@ -61,7 +57,6 @@ void MetadataTableModel::filterByCatalog(const QString &catalog,
                                           const QVariantList &allRows,
                                           const QStringList &columns)
 {
-    // - Keep only rows whose target matches the selected catalog group -
     beginResetModel();
     m_columns = columns;
     m_rows.clear();
@@ -106,7 +101,6 @@ void MetadataTableModel::filterByTargetAndDate(const QString &target,
                                                 const QVariantList &allRows,
                                                 const QStringList &columns)
 {
-    // - Filter metadata by a selected target and observation date -
     beginResetModel();
     m_columns = columns;
     m_rows.clear();
@@ -120,9 +114,6 @@ void MetadataTableModel::filterByTargetAndDate(const QString &target,
     }
     endResetModel();
 }
-
-// ---- TargetSummaryModel ----
-// - Exposes summary rows for each observed target to the UI -
 
 TargetSummaryModel::TargetSummaryModel(QObject *parent) : QAbstractListModel(parent) {}
 
@@ -184,8 +175,6 @@ void TargetSummaryModel::sortBy(const QString &column, bool ascending)
     endResetModel();
 }
 
-// Normalize a target name for fuzzy matching: uppercase, collapse spaces,
-// remove common annotation suffixes so "M 31" == "M31", "NGC 7000" == "NGC7000".
 static QString normalizeTargetName(const QString &name)
 {
     QString n = name.toUpper().simplified();
@@ -212,9 +201,6 @@ int TargetSummaryModel::sessionCountForTarget(const QString &targetName) const
     }
     return 0;
 }
-
-// ---- CalibrationSummaryModel ----
-// - Exposes calibration frame statistics grouped by type and settings -
 
 CalibrationSummaryModel::CalibrationSummaryModel(QObject *parent) : QAbstractListModel(parent) {}
 
@@ -261,9 +247,6 @@ void CalibrationSummaryModel::setEntries(const QVariantList &entries)
         m_entries.append(e.toMap());
     endResetModel();
 }
-
-// ---- CatalogModel ----
-// - Builds the catalog count view used in the target/catalog breakdown panel -
 
 CatalogModel::CatalogModel(QObject *parent) : QAbstractListModel(parent) {}
 

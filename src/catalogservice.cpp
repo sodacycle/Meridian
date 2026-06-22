@@ -7,7 +7,6 @@
 #include <QJsonParseError>
 #include <QVariantMap>
 
-// Object type whitelist (object_definition field values from the OpenNGC catalog)
 static const QStringList ALLOWED_TYPES = {
     QStringLiteral("Galaxy"),
     QStringLiteral("Globular Cluster"),
@@ -25,8 +24,6 @@ static const QStringList ALLOWED_TYPES = {
 
 CatalogService::CatalogService(QObject *parent) : QObject(parent)
 {
-    // Locate the catalog in the Qt resource system — try the most likely paths
-    // first, then fall back to a full resource-tree search.
     QFile f;
     const QString tryPaths[] = {
         QStringLiteral(":/Meridian/src/ngc-ic-messier-catalog.json"),
@@ -94,7 +91,6 @@ double CatalogService::parseMag(const QVariantMap &obj)
 
 double CatalogService::parseRaHours(const QString &ra)
 {
-    // Format: "HH:MM:SS.ss"
     const QStringList p = ra.split(':');
     if (p.size() < 2) return 0.0;
     return p[0].toDouble()
@@ -104,7 +100,6 @@ double CatalogService::parseRaHours(const QString &ra)
 
 double CatalogService::parseDecDeg(const QString &dec)
 {
-    // Format: "[+-]DD:MM:SS.s"
     const bool neg = dec.startsWith('-');
     const QString abs = (neg || dec.startsWith('+')) ? dec.mid(1) : dec;
     const QStringList p = abs.split(':');

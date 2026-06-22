@@ -9,7 +9,6 @@
 #include <QAtomicInt>
 #include <QFutureWatcher>
 
-// - Holds a single FITS file metadata row after scanning -
 struct MetadataEntry {
     QString frameType;
     QString file;
@@ -40,7 +39,6 @@ struct MetadataEntry {
     QVariantMap toVariantMap() const;
 };
 
-// - Aggregated summary data for a single target in the scan results -
 struct TargetSummaryEntry {
     QString target;
     int fitsCount = 0;
@@ -50,7 +48,6 @@ struct TargetSummaryEntry {
     QVariantMap toVariantMap() const;
 };
 
-// - Aggregated calibration frame statistics grouped by settings -
 struct CalibrationSummaryEntry {
     QString frameType;
     double exposureTimeS = 0;
@@ -63,7 +60,6 @@ struct CalibrationSummaryEntry {
     QVariantMap toVariantMap() const;
 };
 
-// - Result object returned from background scanning tasks -
 struct ScanResult {
     QList<MetadataEntry> metadataList;
     QList<TargetSummaryEntry> targetSummary;
@@ -72,7 +68,6 @@ struct ScanResult {
     QString error;
 };
 
-// - Scans directories of FITS files and publishes data for QML views -
 class FitsScanner : public QObject
 {
     Q_OBJECT
@@ -141,4 +136,4 @@ private:
     QString m_currentScanDirectory;
 };
 
-#endif // FITSCANNER_H
+#endif

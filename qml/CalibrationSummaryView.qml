@@ -157,7 +157,7 @@ Rectangle {
                 }
             }
         }
-        } // Item (scroll wrapper)
+        }
         Item { width: 1; height: 4 }
     }
 }

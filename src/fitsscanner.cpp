@@ -8,7 +8,6 @@
 #include <QSet>
 #include <QFileDialog>
 
-// - Known stacking software identifiers and directory names to skip during scanning -
 static const QStringList STACKING_SOFTWARE = {
     "siril", "deepskystacker", "pixinsight", "astropixelprocessor",
     "autostakkert", "registax", "sequator", "starry landscape stacker"
@@ -16,7 +15,6 @@ static const QStringList STACKING_SOFTWARE = {
 
 static const QSet<QString> SCAN_SKIP_DIRS = { "stacked", "process", "darks", "flats", "bias", "rejected" };
 
-// - Convert scanned metadata entry objects into a QVariantMap for the QML model -
 QVariantMap MetadataEntry::toVariantMap() const
 {
     return {
@@ -48,7 +46,6 @@ QVariantMap MetadataEntry::toVariantMap() const
     };
 }
 
-// - Convert target summary entries into maps consumable by QML -
 QVariantMap TargetSummaryEntry::toVariantMap() const
 {
     return {
@@ -60,7 +57,6 @@ QVariantMap TargetSummaryEntry::toVariantMap() const
     };
 }
 
-// - Convert calibration summary entries into QML-friendly map objects -
 QVariantMap CalibrationSummaryEntry::toVariantMap() const
 {
     return {
@@ -74,14 +70,12 @@ QVariantMap CalibrationSummaryEntry::toVariantMap() const
     };
 }
 
-// ---- FitsScanner lifecycle and status helpers ----
 FitsScanner::FitsScanner(QObject *parent) : QObject(parent) {}
 
 bool FitsScanner::isRunning() const { return m_running; }
 int FitsScanner::filesProcessed() const { return m_filesProcessed; }
 QString FitsScanner::statusText() const { return m_statusText; }
 
-// - Heuristic checks for stacked FITS files based on header values and known software -
 bool FitsScanner::metadataIndicatesStacking(const QHash<QString, QVariant> &header)
 {
     if (header.isEmpty()) return false;
@@ -115,7 +109,6 @@ bool FitsScanner::metadataIndicatesStacking(const QHash<QString, QVariant> &head
     return false;
 }
 
-// - Return the first non-empty FITS header value from a list of possible keys -
 QString FitsScanner::anyField(const QHash<QString, QVariant> &header,
                               const QStringList &keys,
                               const QString &fallback)
@@ -130,7 +123,6 @@ QString FitsScanner::anyField(const QHash<QString, QVariant> &header,
     return fallback;
 }
 
-// - Format a total exposure duration into human-readable hours/minutes/seconds -
 QString FitsScanner::formatHMS(double totalSeconds)
 {
     int hours = static_cast<int>(totalSeconds) / 3600;
@@ -143,7 +135,6 @@ QString FitsScanner::formatHMS(double totalSeconds)
     return result.trimmed();
 }
 
-// - Determine the FITS frame type from header metadata or filename clues -
 FitsScanner::FrameTypeResult FitsScanner::detectFrameType(
     const QHash<QString, QVariant> &header, const QString &filename)
 {
@@ -176,7 +167,6 @@ FitsScanner::FrameTypeResult FitsScanner::detectFrameType(
     return {"LIGHT", "assumed"};
 }
 
-// - Try to extract target name from a filename pattern if present -
 QString FitsScanner::extractTargetFromFilename(const QString &filename)
 {
     QRegularExpression re("^Light_(.+?)_\\d+\\.\\d+s_");
@@ -187,7 +177,6 @@ QString FitsScanner::extractTargetFromFilename(const QString &filename)
     return {};
 }
 
-// - Determine which catalog a target belongs to for summary grouping -
 QString FitsScanner::classifyCatalog(const QString &targetName)
 {
     QString name = targetName.toUpper().trimmed();
@@ -209,7 +198,6 @@ QString FitsScanner::classifyCatalog(const QString &targetName)
     return "Other";
 }
 
-// - Walk a directory tree and build metadata entries for each FITS file found -
 void FitsScanner::walkDirectory(const QString &dir, QList<MetadataEntry> &results)
 {    if (m_canceled.loadRelaxed()) return;
 
@@ -237,8 +225,6 @@ void FitsScanner::walkDirectory(const QString &dir, QList<MetadataEntry> &result
 
         auto header = FitsParser::parseHeader(info.absoluteFilePath());
 
-        // Detect frame type first so calibration frames are never discarded by
-        // the stacking heuristic — dark/flat/bias files are not stacked light frames.
         auto [frameType, method] = detectFrameType(header, info.fileName());
 
         bool isStacked = false;
@@ -264,9 +250,6 @@ void FitsScanner::walkDirectory(const QString &dir, QList<MetadataEntry> &result
             entry.target = anyField(header, {"OBJECT", "TARGET", "TITLE"}, "Unknown");
         }
 
-        // Normalize mosaic/panel variants so that "NGC 7000 Mosaic", "NGC 7000 Panel 1",
-        // and plain "NGC 7000" are all treated as the same target. The regex is not
-        // anchored to $ so Qt's remove() strips every occurrence in one pass.
         {
             static const QRegularExpression mosaicTerm(
                 R"([\s_\-]*(mosaic|panel|pano|panorama)[\s_\-]*\d*)",
@@ -360,7 +343,6 @@ void FitsScanner::clearDirectories()
     emit directoriesChanged();
 }
 
-// - Aggregate a flat list of metadata entries into a complete ScanResult -
 ScanResult FitsScanner::aggregateEntries(const QList<MetadataEntry> &metadataList) const
 {
     ScanResult result;
@@ -410,7 +392,6 @@ ScanResult FitsScanner::aggregateEntries(const QList<MetadataEntry> &metadataLis
     return result;
 }
 
-// - Walk all paths, aggregate, and return — used by single-directory scan -
 ScanResult FitsScanner::buildScanResult(const QStringList &paths)
 {
     QList<MetadataEntry> all;
@@ -429,7 +410,6 @@ ScanResult FitsScanner::buildScanResult(const QStringList &paths)
     return aggregateEntries(all);
 }
 
-// - Scan all directories, emitting partial results after each one finishes -
 void FitsScanner::scanDirectories()
 {
     if (m_running || m_directories.isEmpty()) return;
@@ -461,7 +441,6 @@ void FitsScanner::scanDirectories()
 
             if (m_canceled.loadRelaxed()) break;
 
-            // Emit cumulative results so the UI updates as each folder finishes
             ScanResult partial = aggregateEntries(allEntries);
             QVariantList metaList, targetList, calList;
             for (const auto &e : partial.metadataList)        metaList.append(e.toVariantMap());
@@ -486,7 +465,6 @@ void FitsScanner::scanDirectories()
     }));
 }
 
-// - Scan a single directory (kept for organizer compatibility) -
 void FitsScanner::scanDirectory(const QString &dirPath)
 {
     if (m_running) return;

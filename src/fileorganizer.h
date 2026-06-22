@@ -6,7 +6,6 @@
 #include <QStringList>
 #include <QAtomicInt>
 
-// - Helper object for organizing FITS files, deleting JPGs, and preparing files for Siril -
 class FileOrganizer : public QObject
 {
     Q_OBJECT
@@ -53,4 +52,4 @@ private:
     QString m_statusText;
 };
 
-#endif // FILEORGANIZER_H
+#endif

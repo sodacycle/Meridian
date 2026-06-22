@@ -3,8 +3,6 @@ import QtQuick.Controls
 
 Rectangle {
     id: root
-    // Exact content width: column cells + 16 px left margin + 16 px right margin.
-    // Do NOT let the parent stretch this further; the table ends at Total Integration Time.
     width:  colW[0] + colW[1] + colW[2] + 32
     height: col.height + 32
     color:  window.sysPal.base
@@ -51,7 +49,6 @@ Rectangle {
             color: window.sysPal.windowText; width: parent.width
         }
 
-        // Column headers (clickable — click to sort, click again to reverse)
         Row {
             spacing: 0; visible: root.rowCount > 0
             Repeater {
@@ -94,7 +91,6 @@ Rectangle {
             }
         }
 
-        // Data rows
         Item {
             width: parent.width
             height: root.rowCount > 0 ? Math.min(300, root.rowCount * 36 + 2) : 0
@@ -114,10 +110,6 @@ Rectangle {
                 Keys.onEnterPressed: Keys.returnPressed(event)
 
                 delegate: Rectangle {
-                    // FIX: capture all four role values into named properties
-                    // before any inner Repeater. Using model.X inside an array
-                    // literal passed to a child Repeater shadows 'model' with
-                    // the child's own model context, producing undefined values.
                     required property int    index
                     required property string targetName
                     required property int    fitsCount

@@ -6,8 +6,6 @@
 #include <QUrl>
 #include <QUrlQuery>
 
-// ── Constellation abbreviation table (ported from wiki-parser.js) ─────────────
-
 const QHash<QString, QString> &WikiService::constellationMap()
 {
     static const QHash<QString, QString> map = {
@@ -55,16 +53,12 @@ QString WikiService::fullConstellation(const QString &abbr) const
     return constellationMap().value(abbr, abbr.isEmpty() ? QStringLiteral("N/A") : abbr);
 }
 
-// ── Article title derivation (matches wiki-parser.js extractTitleFromUrl) ─────
-
 static QString articleTitle(const QString &objectName)
 {
-    // If the name contains a "/wiki/" path segment, extract the last part.
     if (objectName.contains(QStringLiteral("/wiki/"))) {
         QString slug = objectName.section('/', -1);
         return QString(slug).replace('_', ' ');
     }
-    // For catalogue names like "NGC224", "M31", "IC 434" normalise to "NGC 224" etc.
     static const QRegularExpression catRx(
         QStringLiteral("^(NGC|IC|M)\\s*(\\d+)$"),
         QRegularExpression::CaseInsensitiveOption);
@@ -74,14 +68,10 @@ static QString articleTitle(const QString &objectName)
     return objectName;
 }
 
-// ── Network fetch ─────────────────────────────────────────────────────────────
-
 void WikiService::lookup(const QString &objectName)
 {
     const QString title = articleTitle(objectName);
 
-    // Single request: thumbnail + intro extract, with redirect following.
-    // action=query handles redirects natively (e.g. "M 31" → Andromeda Galaxy).
     QUrl url(QStringLiteral("https://en.wikipedia.org/w/api.php"));
     QUrlQuery q;
     q.addQueryItem(QStringLiteral("action"),      QStringLiteral("query"));
@@ -141,5 +131,3 @@ void WikiService::lookup(const QString &objectName)
         emit infoboxReady(data, objectName);
     });
 }
-
-

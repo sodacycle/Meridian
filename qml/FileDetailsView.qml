@@ -64,7 +64,6 @@ Rectangle {
         }
     }
 
-    // Remove one row by file path without resetting any active filter
     function removeRow(path) {
         _keepDisplay = true
         allRows    = allRows.filter(function(r)    { return r["Path"] !== path })

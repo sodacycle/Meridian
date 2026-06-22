@@ -19,7 +19,6 @@ void LightPollutionService::fetch(double lat, double lon)
     m_fetching = true;
     setStatus("Loading…");
 
-    // World Atlas 2015 point query — same data source used by lightpollutionmap.info
     QString qd = QString("{\"lng\":%1,\"lat\":%2}")
                      .arg(lon, 0, 'f', 6)
                      .arg(lat, 0, 'f', 6);
@@ -40,9 +39,6 @@ void LightPollutionService::fetch(double lat, double lon)
         reply->deleteLater();
 
         if (reply->error() != QNetworkReply::NoError) {
-            // Network unavailable — produce a coarse estimate from coordinates.
-            // Population density proxy: absolute latitude > 60° or near poles → likely rural.
-            // This is intentionally rough — just gives a starting point.
             applyBortle(estimateFromCoords(lat, lon), 0.0, true);
             return;
         }
@@ -57,15 +53,13 @@ void LightPollutionService::fetch(double lat, double lon)
     });
 }
 
-// Trivial coordinate-based fallback: very rough urban/rural heuristic.
-int LightPollutionService::estimateFromCoords(double /*lat*/, double /*lon*/)
+int LightPollutionService::estimateFromCoords(double , double )
 {
-    return 5; // Suburban sky — neutral middle estimate
+    return 5;
 }
 
 int LightPollutionService::sqmToBortle(double sqm)
 {
-    // Thresholds from Cinzano et al. Sky Quality Meter / Bortle calibration
     if (sqm >= 21.99) return 1;
     if (sqm >= 21.89) return 2;
     if (sqm >= 21.69) return 3;

@@ -5,7 +5,6 @@
 #include <QList>
 #include <QVariantMap>
 
-// - List model exposing FITS metadata rows to QML table views -
 class MetadataTableModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -34,7 +33,6 @@ private:
     QStringList m_columns;
 };
 
-// - Summary model for categorized target statistics in the UI -
 class TargetSummaryModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -63,7 +61,6 @@ private:
     QList<QVariantMap> m_entries;
 };
 
-// - Model representing calibration frame statistics for display panels -
 class CalibrationSummaryModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -92,7 +89,6 @@ private:
     QList<QVariantMap> m_entries;
 };
 
-// - Model used to aggregate and present catalog counts from target data -
 class CatalogModel : public QAbstractListModel
 {
     Q_OBJECT
@@ -121,4 +117,4 @@ private:
     QList<CatalogEntry> m_catalogs;
 };
 
-#endif // METADATAMODEL_H
+#endif
