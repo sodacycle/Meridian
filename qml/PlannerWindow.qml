@@ -1860,5 +1860,7 @@ Window {
     SkyArcDetailedWindow {
         id: skyArcDetailedWindow
         visible: false
+        selectedName: plannerWindow.selectedObj ? plannerWindow.selectedObj.name : ""
+        onObjectSelected: function(entry) { plannerWindow.selectedObj = entry }
     }
 }

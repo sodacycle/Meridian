@@ -17,6 +17,72 @@ Window {
     property int  nightOffset: 0
     readonly property bool hasLocation: (latitude !== 0.0 || longitude !== 0.0)
 
+    property real focusAltDeg: 90.0
+    property real focusAzDeg:  0.0
+    property real zoom:  1.0
+    property bool showGrid: true
+    property bool showLabels: true
+    property string selectedName: ""
+
+    property double nowMs: Date.now()
+    property var objects: []
+
+    signal objectSelected(var entry)
+
+    function resetView() {
+        focusAltDeg = 90.0; focusAzDeg = 0.0; zoom = 1.0
+        domeCanvas.requestPaint()
+    }
+
+    function rebuildObjects() {
+        var list = []
+        var model = plannerService.objects
+        var n = model.count
+        for (var i = 0; i < n; i++) {
+            var e = model.entryAt(i)
+            var integ = targetSummaryModel.integrationSecondsForTarget(e.name)
+            list.push({
+                index: i,
+                name: e.name,
+                commonName: e.commonName,
+                type: e.type,
+                raHours: e.raHours,
+                decDeg: e.decDeg,
+                mag: e.mag,
+                integ: integ,
+                observed: integ > 0
+            })
+        }
+        var observedTotal = 0
+        for (var a = 0; a < list.length; a++) if (list[a].observed) observedTotal++
+        var obsIdx = 0
+        for (var b = 0; b < list.length; b++) {
+            if (list[b].observed) {
+                list[b].color = Qt.hsva(obsIdx / Math.max(1, observedTotal), 0.65, 0.95, 1.0)
+                obsIdx++
+            } else {
+                list[b].color = null
+            }
+        }
+        objects = list
+        domeCanvas.requestPaint()
+    }
+
+    onVisibleChanged: if (visible) { nowMs = Date.now(); rebuildObjects() }
+    onLatitudeChanged:  domeCanvas.requestPaint()
+    onLongitudeChanged: domeCanvas.requestPaint()
+    onSelectedNameChanged: domeCanvas.requestPaint()
+
+    Connections {
+        target: plannerService.objects
+        function onModelReset() { skyArcDetailedWindow.rebuildObjects() }
+    }
+
+    Timer {
+        interval: 30000; running: skyArcDetailedWindow.visible; repeat: true
+        onTriggered: { skyArcDetailedWindow.nowMs = Date.now(); domeCanvas.requestPaint() }
+    }
+
     Rectangle {
         id: headerBar
         anchors { top: parent.top; left: parent.left; right: parent.right }
@@ -50,72 +116,269 @@ Window {
             anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
             spacing: 6
 
-            Button { text: "Zoom In";    flat: true; enabled: false; implicitHeight: 28 }
-            Button { text: "Zoom Out";   flat: true; enabled: false; implicitHeight: 28 }
-            Button { text: "Reset View"; flat: true; enabled: false; implicitHeight: 28 }
-            Button { text: "Grid";       flat: true; enabled: false; implicitHeight: 28; checkable: true }
+            Button {
+                text: "Zoom In"; flat: true; implicitHeight: 28
+                onClicked: skyArcDetailedWindow.zoom = Math.min(8.0, skyArcDetailedWindow.zoom * 1.2)
+            }
+            Button {
+                text: "Zoom Out"; flat: true; implicitHeight: 28
+                onClicked: skyArcDetailedWindow.zoom = Math.max(0.5, skyArcDetailedWindow.zoom / 1.2)
+            }
+            Button {
+                text: "Reset View"; flat: true; implicitHeight: 28
+                onClicked: skyArcDetailedWindow.resetView()
+            }
+            Button {
+                text: "Grid"; flat: true; implicitHeight: 28; checkable: true
+                checked: skyArcDetailedWindow.showGrid
+                onToggled: skyArcDetailedWindow.showGrid = checked
+            }
+            Button {
+                text: "Labels"; flat: true; implicitHeight: 28; checkable: true
+                checked: skyArcDetailedWindow.showLabels
+                onToggled: skyArcDetailedWindow.showLabels = checked
+            }
         }
     }
 
     Item {
         id: domeArea
         anchors { top: headerBar.bottom; left: parent.left; right: featurePanel.left; bottom: parent.bottom }
+        clip: true
 
         Canvas {
-            id: domePlaceholder
+            id: domeCanvas
             anchors.fill: parent
-            anchors.margins: 24
+
+            property var screenObjects: []
+            readonly property real scaleFactor:
+                (Math.min(width, height) / 2 - 44) / (Math.PI / 2) * skyArcDetailedWindow.zoom
+
+            property real wfa: skyArcDetailedWindow.focusAltDeg
+            property real wfz: skyArcDetailedWindow.focusAzDeg
+            property real wz:  skyArcDetailedWindow.zoom
+            property bool wg:  skyArcDetailedWindow.showGrid
+            property bool wl:  skyArcDetailedWindow.showLabels
+            property var  wobj: skyArcDetailedWindow.objects
+            property double wnow: skyArcDetailedWindow.nowMs
+            onWfaChanged: requestPaint()
+            onWfzChanged: requestPaint()
+            onWzChanged:  requestPaint()
+            onWgChanged:  requestPaint()
+            onWlChanged:  requestPaint()
+            onWobjChanged: requestPaint()
+            onWnowChanged: requestPaint()
+            onWidthChanged:  requestPaint()
+            onHeightChanged: requestPaint()
+
+            function selectAt(mx, my) {
+                var best = null, bestD = 16 * 16
+                for (var i = 0; i < screenObjects.length; i++) {
+                    var s = screenObjects[i]
+                    var dx = s.x - mx, dy = s.y - my
+                    var d = dx * dx + dy * dy
+                    if (d < bestD) { bestD = d; best = s }
+                }
+                if (best) {
+                    skyArcDetailedWindow.selectedName = best.name
+                    skyArcDetailedWindow.objectSelected(plannerService.objects.entryAt(best.index))
+                }
+            }
 
             onPaint: {
                 var ctx = getContext("2d")
                 ctx.clearRect(0, 0, width, height)
+                screenObjects = []
+                if (!skyArcDetailedWindow.hasLocation) {
+                    ctx.fillStyle = pal.placeholderText.toString()
+                    ctx.font = "14px sans-serif"; ctx.textAlign = "center"
+                    ctx.fillText("No location set — open from the planner with a site location.",
+                                 width / 2, height / 2)
+                    return
+                }
 
-                var cx = width / 2
-                var cy = height / 2
-                var radius = Math.max(10, Math.min(width, height) / 2 - 30)
+                var DEG = Math.PI / 180
+                var lat = skyArcDetailedWindow.latitude
+                var lon = skyArcDetailedWindow.longitude
+                var cx = width / 2, cy = height / 2
+                var scale = domeCanvas.scaleFactor
+                var cMax = 1.74
 
-                ctx.strokeStyle = pal.mid.toString()
-                ctx.lineWidth = 1
-                ctx.beginPath()
-                ctx.arc(cx, cy, radius, 0, 2 * Math.PI)
-                ctx.stroke()
+                var alt0 = skyArcDetailedWindow.focusAltDeg * DEG
+                var az0  = skyArcDetailedWindow.focusAzDeg * DEG
+                var sinA0 = Math.sin(alt0), cosA0 = Math.cos(alt0)
 
-                ctx.setLineDash([2, 6])
-                for (var f = 1; f <= 2; f++) {
+                function proj(altDeg, azDeg) {
+                    var alt = altDeg * DEG, az = azDeg * DEG
+                    var dAz = az - az0
+                    var sa = Math.sin(alt), ca = Math.cos(alt)
+                    var cosc = Math.max(-1, Math.min(1, sinA0 * sa + cosA0 * ca * Math.cos(dAz)))
+                    var c = Math.acos(cosc)
+                    var k = (c < 1e-6) ? 1 : c / Math.sin(c)
+                    var X = k * ca * Math.sin(dAz)
+                    var Y = k * (cosA0 * sa - sinA0 * ca * Math.cos(dAz))
+                    return { x: cx + scale * X, y: cy - scale * Y, c: c }
+                }
+
+                function strokeSky(samples, close) {
                     ctx.beginPath()
-                    ctx.arc(cx, cy, radius * f / 3, 0, 2 * Math.PI)
+                    var drawing = false
+                    for (var i = 0; i < samples.length; i++) {
+                        var p = proj(samples[i][0], samples[i][1])
+                        if (p.c > cMax) { drawing = false; continue }
+                        if (!drawing) { ctx.moveTo(p.x, p.y); drawing = true }
+                        else ctx.lineTo(p.x, p.y)
+                    }
+                    if (close && drawing) ctx.closePath()
                     ctx.stroke()
                 }
-                ctx.setLineDash([])
 
+                function drawPath(decDeg, strokeColor, lw) {
+                    ctx.strokeStyle = strokeColor; ctx.lineWidth = lw; ctx.setLineDash([])
+                    ctx.beginPath()
+                    var drawing = false
+                    for (var ha = 0; ha <= 360; ha += 2) {
+                        var palt = plannerService.altitudeDeg(0, decDeg, lat, ha)
+                        if (palt < 0) { drawing = false; continue }
+                        var paz = plannerService.azimuthDeg(0, decDeg, lat, ha)
+                        var pp = proj(palt, paz)
+                        if (pp.c > cMax) { drawing = false; continue }
+                        if (!drawing) { ctx.moveTo(pp.x, pp.y); drawing = true }
+                        else ctx.lineTo(pp.x, pp.y)
+                    }
+                    ctx.stroke()
+                }
+
+                if (skyArcDetailedWindow.showGrid) {
+                    ctx.strokeStyle = Qt.rgba(pal.mid.r, pal.mid.g, pal.mid.b, 0.5)
+                    ctx.lineWidth = 0.5; ctx.setLineDash([2, 4])
+                    for (var ringAlt = 15; ringAlt <= 75; ringAlt += 15) {
+                        var ring = []
+                        for (var ra = 0; ra <= 360; ra += 3) ring.push([ringAlt, ra])
+                        strokeSky(ring, false)
+                    }
+                    for (var spokeAz = 0; spokeAz < 360; spokeAz += 30) {
+                        var meridian = (spokeAz === 0 || spokeAz === 180)
+                        ctx.setLineDash(meridian ? [] : [2, 4])
+                        ctx.lineWidth = meridian ? 1.0 : 0.5
+                        ctx.strokeStyle = meridian ? pal.mid.toString()
+                                                   : Qt.rgba(pal.mid.r, pal.mid.g, pal.mid.b, 0.5)
+                        var spoke = []
+                        for (var sa2 = 0; sa2 <= 88; sa2 += 2) spoke.push([sa2, spokeAz])
+                        strokeSky(spoke, false)
+                    }
+                    ctx.setLineDash([])
+                }
+
+                ctx.strokeStyle = pal.windowText.toString()
+                ctx.lineWidth = 1.5; ctx.setLineDash([])
+                var horizon = []
+                for (var ha = 0; ha <= 360; ha += 2) horizon.push([0, ha])
+                strokeSky(horizon, false)
+
+                ctx.fillStyle = pal.placeholderText.toString()
                 ctx.beginPath()
-                ctx.moveTo(cx - radius, cy); ctx.lineTo(cx + radius, cy)
-                ctx.moveTo(cx, cy - radius); ctx.lineTo(cx, cy + radius)
-                ctx.stroke()
+                var z = proj(90, 0)
+                if (z.c < cMax) { ctx.arc(z.x, z.y, 2, 0, 2 * Math.PI); ctx.fill() }
 
-                ctx.fillStyle = pal.placeholderText.toString()
-                ctx.font = "13px sans-serif"
-                ctx.textAlign = "center"
-                ctx.fillText("N", cx, cy - radius - 10)
-                ctx.fillText("S", cx, cy + radius + 18)
-                ctx.textAlign = "left"
-                ctx.fillText("E", cx + radius + 8, cy + 4)
-                ctx.textAlign = "right"
-                ctx.fillText("W", cx - radius - 8, cy + 4)
+                var compass = [["N", 0], ["E", 90], ["S", 180], ["W", 270],
+                               ["NE", 45], ["SE", 135], ["SW", 225], ["NW", 315]]
+                ctx.textAlign = "center"; ctx.textBaseline = "middle"
+                for (var ci = 0; ci < compass.length; ci++) {
+                    var cp = proj(0, compass[ci][1])
+                    if (cp.c > cMax) continue
+                    var dx = cp.x - cx, dy = cp.y - cy
+                    var len = Math.max(1, Math.sqrt(dx * dx + dy * dy))
+                    var lx = cp.x + dx / len * 14, ly = cp.y + dy / len * 14
+                    var one = compass[ci][0].length === 1
+                    ctx.font = one ? "bold 14px sans-serif" : "11px sans-serif"
+                    ctx.fillStyle = one ? pal.windowText.toString() : pal.placeholderText.toString()
+                    ctx.fillText(compass[ci][0], lx, ly)
+                }
+                ctx.textBaseline = "alphabetic"
 
-                ctx.textAlign = "center"
-                ctx.fillStyle = pal.windowText.toString()
-                ctx.font = "16px sans-serif"
-                ctx.fillText("360° Sky Dome", cx, cy - 8)
-                ctx.fillStyle = pal.placeholderText.toString()
-                ctx.font = "12px sans-serif"
-                ctx.fillText("Interactive view — coming soon", cx, cy + 14)
+                var nowJd = plannerService.toJD(skyArcDetailedWindow.nowMs)
+                var lstNow = plannerService.lst(nowJd, lon)
+                var accent = pal.highlight.toString()
+                var faint  = Qt.rgba(pal.windowText.r, pal.windowText.g, pal.windowText.b, 0.5)
+                var faintAccent = Qt.rgba(pal.highlight.r, pal.highlight.g, pal.highlight.b, 0.35)
+
+                var selDec = null, selColor = accent
+                for (var pi = 0; pi < skyArcDetailedWindow.objects.length; pi++) {
+                    var po = skyArcDetailedWindow.objects[pi]
+                    if (po.name === skyArcDetailedWindow.selectedName) {
+                        selDec = po.decDeg
+                        if (po.color) selColor = po.color.toString()
+                        continue
+                    }
+                    if (po.observed) drawPath(po.decDeg, po.color.toString(), 1.6)
+                }
+                if (selDec !== null) drawPath(selDec, selColor, 2.8)
+
+                for (var oi = 0; oi < skyArcDetailedWindow.objects.length; oi++) {
+                    var o = skyArcDetailedWindow.objects[oi]
+                    var alt = plannerService.altitudeDeg(o.raHours, o.decDeg, lat, lstNow)
+                    if (alt < 0) continue
+                    var azv = plannerService.azimuthDeg(o.raHours, o.decDeg, lat, lstNow)
+                    var p = proj(alt, azv)
+                    if (p.c > cMax) continue
+                    if (p.x < -20 || p.x > width + 20 || p.y < -20 || p.y > height + 20) continue
+
+                    var isSel = (o.name === skyArcDetailedWindow.selectedName)
+                    var dotR = o.observed ? (3 + Math.min(6, Math.sqrt(o.integ / 3600))) : 2.0
+                    var oCol = o.color ? o.color.toString() : (isSel ? accent : faint)
+
+                    ctx.fillStyle = o.observed ? oCol : faint
+                    ctx.beginPath(); ctx.arc(p.x, p.y, dotR, 0, 2 * Math.PI); ctx.fill()
+
+                    if (isSel) {
+                        ctx.strokeStyle = oCol; ctx.lineWidth = 2
+                        ctx.beginPath(); ctx.arc(p.x, p.y, dotR + 4, 0, 2 * Math.PI); ctx.stroke()
+                    }
+
+                    if (skyArcDetailedWindow.showLabels && (o.observed || isSel)) {
+                        ctx.fillStyle = isSel ? oCol : pal.windowText.toString()
+                        ctx.font = isSel ? "bold 11px sans-serif" : "10px sans-serif"
+                        ctx.textAlign = "left"
+                        var nm = (o.commonName && o.commonName !== "") ? o.commonName : o.name
+                        ctx.fillText(nm, p.x + dotR + 3, p.y + 3)
+                    }
+
+                    screenObjects.push({ x: p.x, y: p.y, name: o.name, index: o.index })
+                }
             }
 
-            Connections {
-                target: skyArcDetailedWindow
-                function onWidthChanged()  { domePlaceholder.requestPaint() }
-                function onHeightChanged() { domePlaceholder.requestPaint() }
+            MouseArea {
+                id: domeMouse
+                anchors.fill: parent
+                property real lastX: 0
+                property real lastY: 0
+                property bool dragging: false
+                cursorShape: Qt.OpenHandCursor
+                onPressed: function(mouse) { lastX = mouse.x; lastY = mouse.y; dragging = false }
+                onPositionChanged: function(mouse) {
+                    if (pressed) {
+                        var dx = mouse.x - lastX, dy = mouse.y - lastY
+                        if (Math.abs(dx) + Math.abs(dy) > 3) dragging = true
+                        var radPerPx = 1.0 / domeCanvas.scaleFactor
+                        var deg = radPerPx * 180 / Math.PI
+                        var fa = skyArcDetailedWindow.focusAltDeg + dy * deg
+                        skyArcDetailedWindow.focusAltDeg = Math.max(0, Math.min(90, fa))
+                        var fz = skyArcDetailedWindow.focusAzDeg - dx * deg
+                        skyArcDetailedWindow.focusAzDeg = ((fz % 360) + 360) % 360
+                        lastX = mouse.x; lastY = mouse.y
+                    }
+                }
+                onReleased: function(mouse) {
+                    if (!dragging) domeCanvas.selectAt(mouse.x, mouse.y)
+                }
+            }
+
+            WheelHandler {
+                onWheel: function(event) {
+                    var f = event.angleDelta.y > 0 ? 1.15 : 0.87
+                    skyArcDetailedWindow.zoom = Math.max(0.5, Math.min(8.0, skyArcDetailedWindow.zoom * f))
+                }
             }
         }
     }
@@ -123,7 +386,7 @@ Window {
     Rectangle {
         id: featurePanel
         anchors { top: headerBar.bottom; right: parent.right; bottom: parent.bottom }
-        width: 320
+        width: 300
         color: Qt.rgba(pal.highlight.r, pal.highlight.g, pal.highlight.b, 0.04)
 
         Rectangle {
@@ -131,56 +394,101 @@ Window {
             width: 1; color: pal.mid
         }
 
+        property var selObj: {
+            var name = skyArcDetailedWindow.selectedName
+            if (!name) return null
+            var list = skyArcDetailedWindow.objects
+            for (var i = 0; i < list.length; i++) if (list[i].name === name) return list[i]
+            return null
+        }
+
         Column {
             anchors { fill: parent; margins: 20 }
-            spacing: 14
+            spacing: 12
 
             Text {
-                text: "Upcoming Feature"
+                text: "Live Sky"
                 font.pixelSize: 11; font.bold: true; color: pal.placeholderText
             }
-
             Text {
                 width: parent.width
-                text: "A full 360° interactive sky dome, in the style of KStars and other planetarium tools."
-                font.pixelSize: 14; font.bold: true; color: pal.windowText
+                text: {
+                    var t = new Date(skyArcDetailedWindow.nowMs)
+                    var hh = t.getUTCHours(), mm = t.getUTCMinutes()
+                    return "Now " + (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm + " UTC"
+                }
+                font.pixelSize: 13; color: pal.windowText
+            }
+            Text {
+                width: parent.width
+                text: "Centre " + Math.round(skyArcDetailedWindow.focusAltDeg) + "° alt · "
+                      + Math.round(skyArcDetailedWindow.focusAzDeg) + "° az · " + skyArcDetailedWindow.zoom.toFixed(1) + "×"
+                font.pixelSize: 11; color: pal.placeholderText
+            }
+
+            Rectangle { width: parent.width; height: 1; color: pal.mid }
+
+            Text {
+                text: "Selected Object"
+                font.pixelSize: 11; font.bold: true; color: pal.placeholderText
+            }
+            Text {
+                width: parent.width
+                text: featurePanel.selObj
+                      ? ((featurePanel.selObj.commonName && featurePanel.selObj.commonName !== "")
+                         ? featurePanel.selObj.commonName : featurePanel.selObj.name)
+                      : "Click an object on the dome"
+                font.pixelSize: 15; font.bold: true; color: pal.windowText
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                width: parent.width
+                visible: featurePanel.selObj !== null
+                text: featurePanel.selObj
+                      ? (featurePanel.selObj.type
+                         + (featurePanel.selObj.observed
+                            ? "  ·  " + Math.round(featurePanel.selObj.integ / 3600 * 10) / 10 + " h imaged"
+                            : "  ·  not yet imaged"))
+                      : ""
+                font.pixelSize: 12; color: pal.placeholderText
+                wrapMode: Text.WordWrap
+            }
+            Text {
+                width: parent.width
+                visible: featurePanel.selObj !== null
+                text: "Selected here is mirrored in the planner's Sky Arc."
+                font.pixelSize: 11; color: pal.placeholderText
                 wrapMode: Text.WordWrap
             }
 
             Rectangle { width: parent.width; height: 1; color: pal.mid }
 
             Text {
-                text: "Planned capabilities"
+                text: "Legend"
                 font.pixelSize: 11; font.bold: true; color: pal.placeholderText
             }
-
-            Column {
-                width: parent.width
+            Row {
                 spacing: 8
+                Rectangle { width: 10; height: 10; radius: 5; color: pal.highlight; anchors.verticalCenter: parent.verticalCenter }
+                Text { text: "Imaged target (size = integration)"; font.pixelSize: 11; color: pal.windowText
+                       anchors.verticalCenter: parent.verticalCenter }
+            }
+            Row {
+                spacing: 8
+                Rectangle { width: 6; height: 6; radius: 3
+                            color: Qt.rgba(pal.windowText.r, pal.windowText.g, pal.windowText.b, 0.5)
+                            anchors.verticalCenter: parent.verticalCenter }
+                Text { text: "Catalogue object up now"; font.pixelSize: 11; color: pal.windowText
+                       anchors.verticalCenter: parent.verticalCenter }
+            }
 
-                Repeater {
-                    model: [
-                        "Pan and zoom across the whole sky dome",
-                        "Live positions from your location and timezone",
-                        "Horizon, altitude and azimuth grid overlays",
-                        "Cardinal directions and meridian reference",
-                        "Overlay of previously collected target data",
-                        "Selectable objects linked back to the planner"
-                    ]
-                    delegate: Row {
-                        required property string modelData
-                        width: featurePanel.width - 40
-                        spacing: 8
+            Rectangle { width: parent.width; height: 1; color: pal.mid }
 
-                        Text { text: "•"; font.pixelSize: 13; color: pal.highlight }
-                        Text {
-                            width: parent.width - 18
-                            text: modelData
-                            font.pixelSize: 12; color: pal.windowText
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-                }
+            Text {
+                width: parent.width
+                text: "Drag to re-centre the sky · scroll to zoom · click an object to open it in the planner. Positions update live for your location."
+                font.pixelSize: 11; color: pal.placeholderText
+                wrapMode: Text.WordWrap
             }
         }
     }
