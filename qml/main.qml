@@ -389,12 +389,14 @@ ApplicationWindow {
                 anchors.left:    parent.left
                 anchors.right:   parent.right
                 anchors.margins: 12
-                height: Math.max(targetSummaryView.height, catalogBreakdown.height)
+                height: Math.max(targetSummaryView.implicitHeight,
+                                 catalogBreakdown.height + 8 + observedSkyDome.height)
 
                 TargetSummaryView {
                     id: targetSummaryView
-                    anchors.top:  parent.top
-                    anchors.left: parent.left
+                    anchors.top:    parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.left:   parent.left
                     onTargetSelected: function(name) {
                         catalogBreakdown.selectedTarget     = name
                         imagingCalendar.activeTargetFilter  = name
@@ -417,6 +419,16 @@ ApplicationWindow {
                         imagingCalendar.buildCalendar(window.fullMetadataList)
                         fileDetailsView.filterByCatalog(name)
                     }
+                }
+
+                ObservedSkyDome {
+                    id: observedSkyDome
+                    anchors.top:        catalogBreakdown.bottom
+                    anchors.topMargin:  8
+                    anchors.left:       targetSummaryView.right
+                    anchors.leftMargin: 2
+                    anchors.right:      parent.right
+                    metadataList: window.fullMetadataList
                 }
             }
             ImagingCalendar {

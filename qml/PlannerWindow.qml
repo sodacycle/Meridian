@@ -99,6 +99,14 @@ Window {
         plannerWindow.showManualEntry = false
     }
 
+    function openSkyArcDetailed() {
+        skyArcDetailedWindow.latitude    = plannerWindow.latitude
+        skyArcDetailedWindow.longitude   = plannerWindow.longitude
+        skyArcDetailedWindow.nightOffset = plannerWindow.nightOffset
+        skyArcDetailedWindow.show()
+        skyArcDetailedWindow.raise()
+    }
+
     readonly property string currentNightDateStr: {
         var d = new Date()
         d.setDate(d.getDate() + nightOffset)
@@ -110,6 +118,12 @@ Window {
 
     property int calendarYear:  (new Date()).getFullYear()
     property int calendarMonth: (new Date()).getMonth() + 1
+
+    property string calendarDensity: "Normal"
+    readonly property int calDensityIndex: calendarDensity === "Compact" ? 0 : (calendarDensity === "Detailed" ? 2 : 1)
+    readonly property int calBaseRowH: [34, 42, 54][calDensityIndex]
+    readonly property int calPerObjH:  [11, 13, 15][calDensityIndex]
+    readonly property int calMaxObjs:  [3, 5, 8][calDensityIndex]
 
     function localMidnightUTC() {
         var lonOffMs = (longitude / 15.0) * 3600000
@@ -656,7 +670,7 @@ Window {
                     }
                 }
                 Text {
-                    width: parent.width - 64
+                    width: parent.width - 64 - calDensityCombo.width
                     text: plannerWindow.monthName(plannerWindow.calendarMonth) + " " + plannerWindow.calendarYear
                     font.pixelSize: 12; font.bold: true; color: pal.windowText
                     horizontalAlignment: Text.AlignHCenter
@@ -671,6 +685,17 @@ Window {
                             plannerWindow.calendarMonth++
                         }
                     }
+                }
+                ComboBox {
+                    id: calDensityCombo
+                    model: ["Compact", "Normal", "Detailed"]
+                    currentIndex: 1
+                    font.pixelSize: 10; implicitWidth: 100; implicitHeight: 26
+                    anchors.verticalCenter: parent.verticalCenter
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: "Balance how many scheduled targets are shown\nper night against calendar readability."
+                    onActivated: plannerWindow.calendarDensity = currentText
                 }
             }
 
@@ -717,7 +742,8 @@ Window {
                                 if (count > maxScheduled) maxScheduled = count
                             }
                         }
-                        heights.push(42 + Math.min(maxScheduled, 5) * 13)
+                        heights.push(plannerWindow.calBaseRowH
+                                     + Math.min(maxScheduled, plannerWindow.calMaxObjs) * plannerWindow.calPerObjH)
                     }
                     return heights
                 }
@@ -825,7 +851,8 @@ Window {
                                         var _ = plannerWindow.scheduleRevision
                                         if (!isValid) return []
                                         var objs = schedulerService.objectsForDate(dateStr)
-                                        return objs.length > 5 ? objs.slice(0, 4) : objs
+                                        var cap = plannerWindow.calMaxObjs
+                                        return objs.length > cap ? objs.slice(0, cap - 1) : objs
                                     }
                                     Text {
                                         required property string modelData
@@ -841,7 +868,7 @@ Window {
                                     text: {
                                         var _ = plannerWindow.scheduleRevision
                                         if (!isValid) return ""
-                                        var extra = schedulerService.countForDate(dateStr) - 4
+                                        var extra = schedulerService.countForDate(dateStr) - (plannerWindow.calMaxObjs - 1)
                                         return extra > 0 ? "+" + extra + " more" : ""
                                     }
                                     font.pixelSize: 10; font.italic: true
@@ -1320,10 +1347,24 @@ Window {
 
                     Rectangle { width: parent.width; height: 1; color: pal.mid; visible: !!plannerWindow.selectedObj }
 
-                    Text {
-                        text: "Sky Arc  —  " + plannerWindow.nightLabel()
-                        font.pixelSize: 12; color: pal.placeholderText
+                    Item {
+                        width: parent.width
+                        height: 24
                         visible: !!plannerWindow.selectedObj
+
+                        Text {
+                            anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+                            text: "Sky Arc  —  " + plannerWindow.nightLabel()
+                            font.pixelSize: 12; color: pal.placeholderText
+                        }
+
+                        Button {
+                            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                            text: "Detailed View  ⤢"
+                            flat: true
+                            implicitHeight: 24
+                            onClicked: plannerWindow.openSkyArcDetailed()
+                        }
                     }
 
                     Canvas {
@@ -1814,5 +1855,10 @@ Window {
                 }
             }
         }
+    }
+
+    SkyArcDetailedWindow {
+        id: skyArcDetailedWindow
+        visible: false
     }
 }

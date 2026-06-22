@@ -74,6 +74,7 @@ class FitsScanner : public QObject
     Q_PROPERTY(bool running READ isRunning NOTIFY runningChanged)
     Q_PROPERTY(int filesProcessed READ filesProcessed NOTIFY progressChanged)
     Q_PROPERTY(QString statusText READ statusText NOTIFY progressChanged)
+    Q_PROPERTY(QString currentFile READ currentFile NOTIFY progressChanged)
     Q_PROPERTY(QStringList directories READ directories NOTIFY directoriesChanged)
     Q_PROPERTY(QString currentScanDirectory READ currentScanDirectory NOTIFY currentScanDirectoryChanged)
 
@@ -88,6 +89,7 @@ public:
     bool isRunning() const;
     int filesProcessed() const;
     QString statusText() const;
+    QString currentFile() const;
     QStringList directories() const;
     QString currentScanDirectory() const;
 
@@ -132,6 +134,7 @@ private:
     bool m_running = false;
     int m_filesProcessed = 0;
     QString m_statusText;
+    QString m_currentFile;
     QStringList m_directories;
     QString m_currentScanDirectory;
 };

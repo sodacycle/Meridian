@@ -4,33 +4,48 @@ import QtQuick.Layouts
 
 Item {
     id: root
-    implicitHeight: 24
+    implicitHeight: content.implicitHeight
     implicitWidth: 200
 
     property bool scannerRunning: false
     property bool organizerRunning: false
 
-    RowLayout {
-        anchors.fill: parent
-        spacing: 8
+    ColumnLayout {
+        id: content
+        width: parent.width
+        spacing: 2
 
-        ProgressBar {
+        RowLayout {
             Layout.fillWidth: true
-            indeterminate: root.scannerRunning || root.organizerRunning
-            value: 0
-            from: 0
-            to: 1
+            spacing: 8
+
+            ProgressBar {
+                Layout.fillWidth: true
+                indeterminate: root.scannerRunning || root.organizerRunning
+                value: 0
+                from: 0
+                to: 1
+            }
+
+            Text {
+                text: root.scannerRunning
+                      ? "Scanning… " + scanner.filesProcessed + " files"
+                      : root.organizerRunning
+                        ? organizer.statusText
+                        : ""
+                color: "#b2bac2"
+                font.pixelSize: 12
+                visible: root.scannerRunning || root.organizerRunning
+            }
         }
 
         Text {
-            text: root.scannerRunning
-                  ? "Scanning… " + scanner.filesProcessed + " files"
-                  : root.organizerRunning
-                    ? organizer.statusText
-                    : ""
-            color: "#b2bac2"
-            font.pixelSize: 12
-            visible: root.scannerRunning || root.organizerRunning
+            Layout.fillWidth: true
+            text: scanner.currentFile
+            color: "#7f8895"
+            font.pixelSize: 11
+            elide: Text.ElideMiddle
+            visible: root.scannerRunning && scanner.currentFile !== ""
         }
     }
 }

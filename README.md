@@ -8,11 +8,11 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 
 ## Features
 
-- **Multi-Folder FITS Scanner** — add any number of root directories; all are scanned in one pass with partial results appearing as each folder finishes. No Python or external tools required.
+- **Multi-Folder FITS Scanner** — add any number of root directories; all are scanned in one pass with partial results appearing as each folder finishes. The progress bar shows each file's path as it is scanned, and hitting **Stop** keeps the data for everything scanned up to that point. No Python or external tools required.
 - **Image Rejection Persistence** — rejection marks are saved as `.mrj` sidecar files next to your FITS files so culling work survives app restarts. Pre-populated automatically on the next scan.
 - **Target Summary** — aggregates sessions by target object, showing total exposure time, sub counts, filters used, and equipment.
 - **Calibration Summary** — separate view for bias, dark, and flat frames grouped by type and settings, linked to each light-frame session.
-- **Imaging Calendar** — month-view calendar showing historical sessions overlaid with moon phase and weather data (cloud cover, humidity, temperature) fetched from the Open-Meteo API.
+- **Imaging Calendar** — calendar of historical sessions overlaid with moon phase and weather data (cloud cover, humidity, temperature) fetched from the Open-Meteo API, with selectable **month / 7-day / 3-day** views that trade breadth for per-night detail.
 - **Observation Planner** — computes tonight's (or any future night's) visible objects from your location. All astronomical math runs in C++ (Julian Date, GMST, LST, altitude, rise/set hour angles). Results are sorted by peak altitude and filtered by a configurable horizon limit. Includes a Sky Arc visualization, viewable-area compass sector filter, and a night scheduler with QSettings persistence.
 - **Light Pollution** — automatic Bortle class and SQM lookup from lightpollutionmap.info using GPS or FITS coordinates, displayed alongside the planner.
 - **Location Service** — GPS position via Qt Positioning with IP geolocation (ipinfo.io) fallback and city name display in the planner.
@@ -22,6 +22,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **Wikipedia Lookup** — fetches a thumbnail image and article summary for any catalog object directly from Wikipedia, displayed alongside the object stats in the Planner.
 - **FITS Image Viewer** — display and inspect individual FITS images with zoom, pan, asinh stretch, denoising, image rejection workflow, and a scrollable thumbnail strip of every image viewed this session. Also opens `.jpg` / `.jpeg` preview files (stretch and denoise controls are hidden; rejection workflow not applicable).
 - **Catalog Breakdown** — organises your imaging history by catalog (Messier, NGC, IC, Caldwell, Sharpless, Barnard, LDN, LBN, Abell, PGC, UGC, and more).
+- **Observed Sky Paths** — below the Catalog Breakdown, a sky-arc chart (the same altitude-vs-time view as the planner's Sky Arc) plots every observed target's altitude across tonight from its FITS RA/Dec, each target in its own colour, with twilight shading, altitude grid, and an hourly time axis. Click a target to highlight it and grey the rest.
 - **File Organiser** — batch tools for organising stacked files, scanning/deleting JPG previews, preparing Siril folder structures, and removing empty directories — all operating across all scan directories simultaneously.
 - **Native system theme** — automatically matches your KDE Plasma or GTK desktop. Wayland native rendering is supported.
 
@@ -105,13 +106,14 @@ The metadata table displays detailed information for every scanned FITS file:
 
 ### Imaging Calendar
 
-Month-view calendar showing every night you imaged with contextual overlays:
+Calendar showing every night you imaged with contextual overlays:
 
+- **View modes** — a **View** selector switches between **Compact** (month grid), **Normal** (7-day week, each day a full weekday column), and **Detailed** (3-day view filling the month-sized space). Fewer days on screen means taller cells that show more per night: more target rows, total integration time, and the equipment used.
 - **Moon phase** — automatically calculated and displayed for each date
 - **Weather data** — cloud cover, humidity, and temperature fetched from Open-Meteo using coordinates extracted from your FITS headers (no API key required)
 - **Weather code emojis** — at-a-glance sky condition summary per night
 - **Temperature unit toggle** — switch between °C and °F in the calendar header
-- Click a date to filter the metadata table to all images from that night
+- Click a date's target to filter the metadata table to that object and night
 
 ---
 

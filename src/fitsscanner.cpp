@@ -75,6 +75,7 @@ FitsScanner::FitsScanner(QObject *parent) : QObject(parent) {}
 bool FitsScanner::isRunning() const { return m_running; }
 int FitsScanner::filesProcessed() const { return m_filesProcessed; }
 QString FitsScanner::statusText() const { return m_statusText; }
+QString FitsScanner::currentFile() const { return m_currentFile; }
 
 bool FitsScanner::metadataIndicatesStacking(const QHash<QString, QVariant> &header)
 {
@@ -218,10 +219,9 @@ void FitsScanner::walkDirectory(const QString &dir, QList<MetadataEntry> &result
             continue;
 
         m_filesProcessed++;
-        if (m_filesProcessed % 10 == 0) {
-            m_statusText = QString("Processing file %1...").arg(m_filesProcessed);
-            emit progressChanged();
-        }
+        m_currentFile = info.absoluteFilePath();
+        m_statusText = QString("Processing file %1...").arg(m_filesProcessed);
+        emit progressChanged();
 
         auto header = FitsParser::parseHeader(info.absoluteFilePath());
 
@@ -403,7 +403,9 @@ ScanResult FitsScanner::buildScanResult(const QStringList &paths)
     }
     if (m_canceled.loadRelaxed()) {
         m_canceled.storeRelaxed(0);
-        ScanResult r; r.canceled = true; return r;
+        ScanResult r = aggregateEntries(all);
+        r.canceled = true;
+        return r;
     }
     m_statusText = "Aggregating data...";
     emit progressChanged();
@@ -456,7 +458,9 @@ void FitsScanner::scanDirectories()
 
         if (m_canceled.loadRelaxed()) {
             m_canceled.storeRelaxed(0);
-            ScanResult r; r.canceled = true; return r;
+            ScanResult r = aggregateEntries(allEntries);
+            r.canceled = true;
+            return r;
         }
 
         m_statusText = "Aggregating data...";
@@ -487,7 +491,7 @@ void FitsScanner::onScanFinished(QFutureWatcher<ScanResult> *watcher)
     ScanResult result = watcher->result();
     if (!result.error.isEmpty()) {
         emit scanError(result.error);
-    } else if (!result.canceled) {
+    } else {
         QVariantList metaList, targetList, calList;
         for (const auto &e : result.metadataList)
             metaList.append(e.toVariantMap());
@@ -498,7 +502,9 @@ void FitsScanner::onScanFinished(QFutureWatcher<ScanResult> *watcher)
         emit scanCompleted(metaList, targetList, calList);
     }
     m_running = false;
+    m_currentFile.clear();
     emit runningChanged();
+    emit progressChanged();
     watcher->deleteLater();
 }
 

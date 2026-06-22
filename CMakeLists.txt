@@ -58,6 +58,8 @@ qt_add_qml_module(Meridian
         qml/FitsViewerManager.qml
         qml/AboutDialog.qml
         qml/PlannerWindow.qml
+        qml/SkyArcDetailedWindow.qml
+        qml/ObservedSkyDome.qml
         qml/components/ProgressIndicator.qml
     RESOURCES
         src/ngc-ic-messier-catalog.json
