@@ -22,6 +22,46 @@ static const QStringList ALLOWED_TYPES = {
     QStringLiteral("Cluster of Stars"),
 };
 
+QVariantList CatalogService::brightStars()
+{
+    if (!m_brightStars.isEmpty())
+        return m_brightStars;
+
+    QFile f;
+    const QString tryPaths[] = {
+        QStringLiteral(":/Meridian/src/bright-stars.json"),
+        QStringLiteral(":/qt/qml/Meridian/src/bright-stars.json"),
+        QStringLiteral(":/src/bright-stars.json"),
+        QStringLiteral(":/bright-stars.json"),
+    };
+    for (const QString &p : tryPaths) {
+        if (QFile::exists(p)) { f.setFileName(p); break; }
+    }
+    if (f.fileName().isEmpty()) {
+        QDirIterator it(QStringLiteral(":/"), QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString p = it.next();
+            if (p.endsWith(QStringLiteral("bright-stars.json"))) { f.setFileName(p); break; }
+        }
+    }
+    if (f.fileName().isEmpty() || !f.open(QIODevice::ReadOnly))
+        return m_brightStars;
+
+    QJsonParseError err;
+    const QJsonDocument doc = QJsonDocument::fromJson(f.readAll(), &err);
+    if (err.error != QJsonParseError::NoError || !doc.isArray())
+        return m_brightStars;
+
+    const QJsonArray arr = doc.array();
+    m_brightStars.reserve(arr.size());
+    for (const QJsonValue &v : arr) {
+        const QJsonArray s = v.toArray();
+        if (s.size() < 3) continue;
+        m_brightStars.append(QVariantList{ s.at(0).toDouble(), s.at(1).toDouble(), s.at(2).toDouble() });
+    }
+    return m_brightStars;
+}
+
 CatalogService::CatalogService(QObject *parent) : QObject(parent)
 {
     QFile f;

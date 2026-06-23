@@ -65,6 +65,11 @@ void VisibleObjectsModel::setEntries(const QList<PlannerEntry> &entries)
     rebuild();
 }
 
+int VisibleObjectsModel::entryCount() const
+{
+    return m_entries.size();
+}
+
 PlannerEntry VisibleObjectsModel::entryAt(int index) const
 {
     if (index < 0 || index >= m_entries.size()) return {};

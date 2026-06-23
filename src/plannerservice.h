@@ -68,6 +68,7 @@ public:
     QHash<int, QByteArray> roleNames() const override;
 
     void setEntries(const QList<PlannerEntry> &entries);
+    Q_INVOKABLE int entryCount() const;
     Q_INVOKABLE PlannerEntry entryAt(int index) const;
     Q_INVOKABLE void sortBy(const QString &column, bool ascending);
     Q_INVOKABLE void setFilter(const QString &text);

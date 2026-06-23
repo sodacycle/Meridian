@@ -2,6 +2,7 @@
 #include <QObject>
 #include <QList>
 #include <QString>
+#include <QVariantList>
 
 struct CatalogEntry {
     Q_GADGET
@@ -36,11 +37,14 @@ public:
     bool ready() const { return m_ready; }
     const QList<CatalogEntry> &entries() const { return m_entries; }
 
+    Q_INVOKABLE QVariantList brightStars();
+
 signals:
     void catalogLoaded();
 
 private:
     QList<CatalogEntry> m_entries;
+    QVariantList m_brightStars;
     bool m_ready = false;
 
     static double parseMag(const QVariantMap &obj);

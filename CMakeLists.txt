@@ -63,6 +63,7 @@ qt_add_qml_module(Meridian
         qml/components/ProgressIndicator.qml
     RESOURCES
         src/ngc-ic-messier-catalog.json
+        src/bright-stars.json
         resources/meridian.svg
 )
 
