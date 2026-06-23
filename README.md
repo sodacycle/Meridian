@@ -13,7 +13,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **Target Summary** — aggregates sessions by target object, showing total exposure time, sub counts, filters used, and equipment.
 - **Calibration Summary** — separate view for bias, dark, and flat frames grouped by type and settings, linked to each light-frame session.
 - **Imaging Calendar** — calendar of historical sessions overlaid with moon phase and weather data (cloud cover, humidity, temperature) fetched from the Open-Meteo API, with selectable **month / 7-day / 3-day** views that trade breadth for per-night detail.
-- **Observation Planner** — computes tonight's (or any future night's) visible objects from your location. All astronomical math runs in C++ (Julian Date, GMST, LST, altitude, rise/set hour angles). Results are sorted by peak altitude and filtered by a configurable horizon limit. Includes a Sky Arc visualization, viewable-area compass sector filter, and a night scheduler with QSettings persistence.
+- **Observation Planner** — computes tonight's (or any future night's) visible objects from your location. All astronomical math runs in C++ (Julian Date, GMST, LST, altitude, rise/set hour angles). Results are sorted by peak altitude and filtered by a configurable horizon limit. Includes a Sky Arc visualization, an interactive 360° detailed sky dome, a viewable-area compass sector filter, and a night scheduler with a month/7-day/3-day calendar and drag-to-block session time-blocking (QSettings persistence).
 - **Light Pollution** — automatic Bortle class and SQM lookup from lightpollutionmap.info using GPS or FITS coordinates, displayed alongside the planner.
 - **Location Service** — GPS position via Qt Positioning with IP geolocation (ipinfo.io) fallback and city name display in the planner.
 - **Observation Scheduler** — per-night target scheduling with QSettings persistence; scheduled objects appear on the planner calendar.
@@ -161,6 +161,8 @@ Plans tonight's session or any future night from your location:
 - **Detailed Sky View** — a **Detailed View** button opens a full 360° interactive sky dome (KStars-style) in its own window: live object positions for your location, an imaging-history overlay sizing imaged targets by integration time, horizon/altitude/azimuth grids with cardinal and meridian reference, pan/zoom, and click-to-select objects mirrored two-way with the planner
 - **UTC / AM-PM toggle** — switch every time in the planner (Observable Objects list, sky-arc axis and labels, recommended observation) between 24-hour UTC and the observing location's local 12-hour AM/PM clock
 - **Viewable area** — narrow the Sky Arc to the sky you can actually see by toggling the compass directions visible from your site (N/NE/E/SE/S/SW/W/NW, independently — so non-contiguous views and a fully blocked west are fine) plus a minimum-altitude floor; in-view portions of the arc are highlighted and out-of-view portions dimmed. Tick **Show only objects in my sky** to filter the Observable Objects list down to just the targets that actually rise into those directions tonight
+- **Planner calendar** — a month / 7-day / 3-day **View** selector (matching the Imaging Calendar) with moon phase and weather (cloud, temperature, humidity) per night and scheduled targets as pills. In Normal/Detailed views, click a target to load it in the detail panel
+- **Session time-blocking** — in the Detailed (3-day) view, each night's lower third is a horizontal 18:00–06:00 timeline; with an object selected, drag across it to block out an observing slot (15-minute snapping, click a bar to remove). Blocks persist via QSettings
 
 ---
 
@@ -186,7 +188,7 @@ Pre-built AppImages for Linux are available on the [Releases page](https://githu
 
 | Platform | Download |
 |---|---|
-| Linux x86-64 | [Meridian-x86_64.AppImage](https://github.com/sodacycle/Meridian/releases/download/1.0.2a/Meridian-x86_64.AppImage) |
+| Linux x86-64 | [Meridian-x86_64.AppImage](https://github.com/sodacycle/Meridian/releases/download/1.0.3a/Meridian-x86_64.AppImage) |
 
 Download, make executable, and run — no Qt installation required:
 

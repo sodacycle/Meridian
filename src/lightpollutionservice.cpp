@@ -31,7 +31,7 @@ void LightPollutionService::fetch(double lat, double lon)
     url.setQuery(q);
 
     QNetworkRequest req(url);
-    req.setHeader(QNetworkRequest::UserAgentHeader, "MeridianAstro/1.0.2a");
+    req.setHeader(QNetworkRequest::UserAgentHeader, "MeridianAstro/1.0.3a");
     QNetworkReply *reply = m_network->get(req);
 
     connect(reply, &QNetworkReply::finished, this, [this, reply, lat, lon]() {

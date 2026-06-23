@@ -45,7 +45,7 @@ Dialog {
                     Text {
                         id: versionLabel
                         anchors.centerIn: parent
-                        text: "v1.0.2a"
+                        text: "v1.0.3a"
                         color: window.sysPal.highlightedText
                         font.pixelSize: 11; font.bold: true
                     }

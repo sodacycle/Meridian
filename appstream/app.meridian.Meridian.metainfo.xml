@@ -55,6 +55,11 @@
   </keywords>
 
   <releases>
+    <release version="1.0.3a" date="2026-06-22">
+      <description>
+        <p>Interactive 360° Sky Arc Detailed planetarium view with a live star field, Observed Sky Paths chart, month/7-day/3-day Imaging Calendar views, resilient scanning, and a location-correct planner timeframe. Version bump to 1.0.3a.</p>
+      </description>
+    </release>
     <release version="1.0.2a" date="2026-06-21">
       <description>
         <p>Viewable-area compass filter, UTC/AM-PM clock toggle, and sky arc improvements in Observation Planner. Version bump to 1.0.2a.</p>

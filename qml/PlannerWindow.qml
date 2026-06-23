@@ -116,14 +116,19 @@ Window {
         return y + "-" + (m < 10 ? "0" : "") + m + "-" + (day < 10 ? "0" : "") + day
     }
 
-    property int calendarYear:  (new Date()).getFullYear()
-    property int calendarMonth: (new Date()).getMonth() + 1
+    property var planAnchor: { var d = new Date(); d.setHours(0, 0, 0, 0); return d }
 
-    property string calendarDensity: "Normal"
-    readonly property int calDensityIndex: calendarDensity === "Compact" ? 0 : (calendarDensity === "Detailed" ? 2 : 1)
-    readonly property int calBaseRowH: [34, 42, 54][calDensityIndex]
-    readonly property int calPerObjH:  [11, 13, 15][calDensityIndex]
-    readonly property int calMaxObjs:  [3, 5, 8][calDensityIndex]
+    property string calendarDensity: "Compact"
+    readonly property string calViewMode: calendarDensity === "Normal" ? "week"
+                                          : (calendarDensity === "Detailed" ? "3day" : "month")
+    readonly property int  calColumns:   calViewMode === "3day" ? 3 : 7
+    readonly property int  calRowUnit:   70
+    readonly property int  calMonthRows: weeksInMonth(planAnchor.getFullYear(), planAnchor.getMonth() + 1)
+    readonly property real calGridAreaH: calMonthRows * calRowUnit
+    readonly property int  calMaxObjs:   calViewMode === "month" ? 2 : (calViewMode === "week" ? 7 : 12)
+
+    property var dayNames:   ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    property var monthShort: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
     function localMidnightUTC() {
         var lonOffMs = (longitude / 15.0) * 3600000
@@ -156,6 +161,83 @@ Window {
     function monthName(month) {
         return ["January","February","March","April","May","June",
                 "July","August","September","October","November","December"][month - 1]
+    }
+
+    function pad2(n) { return (n < 10 ? "0" : "") + n }
+    function planDateStr(d) { return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate()) }
+    function startOfWeek(d) {
+        var s = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+        s.setDate(s.getDate() - s.getDay())
+        return s
+    }
+
+    function planRangeLabel() {
+        var a = planAnchor
+        if (calViewMode === "month") return monthName(a.getMonth() + 1) + " " + a.getFullYear()
+        if (calViewMode === "week") {
+            var s = startOfWeek(a); var e = new Date(s); e.setDate(s.getDate() + 6)
+            return monthShort[s.getMonth()] + " " + s.getDate() + " – " + monthShort[e.getMonth()] + " " + e.getDate()
+        }
+        var e2 = new Date(a); e2.setDate(a.getDate() + 2)
+        return monthShort[a.getMonth()] + " " + a.getDate() + " – " + monthShort[e2.getMonth()] + " " + e2.getDate()
+    }
+
+    function planNavigate(dir) {
+        var d = new Date(planAnchor)
+        if (calViewMode === "month")     d.setMonth(d.getMonth() + dir)
+        else if (calViewMode === "week") d.setDate(d.getDate() + dir * 7)
+        else                             d.setDate(d.getDate() + dir * 3)
+        plannerWindow.planAnchor = d
+    }
+
+    function selectScheduledObject(dayOffset, name) {
+        plannerWindow.nightOffset = dayOffset
+        var model = plannerService.objects
+        var count = model.entryCount()
+        for (var i = 0; i < count; i++) {
+            var e = model.entryAt(i)
+            if (e.name === name) { plannerWindow.selectedObj = e; return }
+        }
+    }
+
+    function fmtNightMin(min) {
+        var total = (18 * 60 + min) % (24 * 60)
+        var h = Math.floor(total / 60), m = total % 60
+        return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m
+    }
+
+    function colorForObject(name) {
+        var hash = 0
+        for (var i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) % 360
+        return Qt.hsva(hash / 360.0, 0.55, 0.85, 1.0)
+    }
+
+    function planDay(d, isOther) {
+        return { dayNum: d.getDate(), weekdayName: dayNames[d.getDay()],
+                 yy: d.getFullYear(), mm: d.getMonth() + 1, dd: d.getDate(),
+                 isOtherMonth: isOther, dateStr: planDateStr(d) }
+    }
+
+    readonly property var planCalendarDays: {
+        var mode = calViewMode
+        var a = planAnchor
+        var days = []
+        if (mode === "month") {
+            var year = a.getFullYear(), month = a.getMonth()
+            var firstDow = new Date(year, month, 1).getDay()
+            var dim = new Date(year, month + 1, 0).getDate()
+            var prevDim = new Date(year, month, 0).getDate()
+            for (var p = firstDow - 1; p >= 0; p--) days.push(planDay(new Date(year, month - 1, prevDim - p), true))
+            for (var dn = 1; dn <= dim; dn++) days.push(planDay(new Date(year, month, dn), false))
+            var rem = (7 - ((firstDow + dim) % 7)) % 7
+            for (var n = 1; n <= rem; n++) days.push(planDay(new Date(year, month + 1, n), true))
+        } else if (mode === "week") {
+            var ws = startOfWeek(a)
+            for (var w = 0; w < 7; w++) days.push(planDay(new Date(ws.getFullYear(), ws.getMonth(), ws.getDate() + w), false))
+        } else {
+            for (var t3 = 0; t3 < 3; t3++) days.push(planDay(new Date(a.getFullYear(), a.getMonth(), a.getDate() + t3), false))
+        }
+        return days
     }
 
     function fmtMag(mag)  { return (mag === undefined || mag === null || mag >= 99.0) ? "—" : mag.toFixed(1) }
@@ -279,9 +361,8 @@ Window {
 
     onNightOffsetChanged: {
         var d = new Date()
-        d.setDate(d.getDate() + nightOffset)
-        plannerWindow.calendarYear  = d.getFullYear()
-        plannerWindow.calendarMonth = d.getMonth() + 1
+        d.setDate(d.getDate() + nightOffset); d.setHours(0, 0, 0, 0)
+        plannerWindow.planAnchor = d
         plannerService.compute(latitude, longitude, nightOffset)
     }
     onLatitudeChanged:  plannerService.compute(latitude, longitude, nightOffset)
@@ -647,7 +728,7 @@ Window {
         Item {
             id: calSection
             anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            height: calTopBorder.height + calNav.height + calDayNames.height + calGrid.totalHeight
+            height: calTopBorder.height + calNav.height + calDayNames.height + calGrid.height
 
             Rectangle {
                 id: calTopBorder
@@ -661,40 +742,28 @@ Window {
                 height: 28
                 Button {
                     text: "‹"; flat: true; implicitWidth: 32; implicitHeight: 28
-                    onClicked: {
-                        if (plannerWindow.calendarMonth === 1) {
-                            plannerWindow.calendarMonth = 12; plannerWindow.calendarYear--
-                        } else {
-                            plannerWindow.calendarMonth--
-                        }
-                    }
+                    onClicked: plannerWindow.planNavigate(-1)
                 }
                 Text {
                     width: parent.width - 64 - calDensityCombo.width
-                    text: plannerWindow.monthName(plannerWindow.calendarMonth) + " " + plannerWindow.calendarYear
+                    text: plannerWindow.planRangeLabel()
                     font.pixelSize: 12; font.bold: true; color: pal.windowText
                     horizontalAlignment: Text.AlignHCenter
                     anchors.verticalCenter: parent.verticalCenter
                 }
                 Button {
                     text: "›"; flat: true; implicitWidth: 32; implicitHeight: 28
-                    onClicked: {
-                        if (plannerWindow.calendarMonth === 12) {
-                            plannerWindow.calendarMonth = 1; plannerWindow.calendarYear++
-                        } else {
-                            plannerWindow.calendarMonth++
-                        }
-                    }
+                    onClicked: plannerWindow.planNavigate(1)
                 }
                 ComboBox {
                     id: calDensityCombo
                     model: ["Compact", "Normal", "Detailed"]
-                    currentIndex: 1
+                    currentIndex: 0
                     font.pixelSize: 10; implicitWidth: 100; implicitHeight: 26
                     anchors.verticalCenter: parent.verticalCenter
                     ToolTip.visible: hovered
                     ToolTip.delay: 500
-                    ToolTip.text: "Balance how many scheduled targets are shown\nper night against calendar readability."
+                    ToolTip.text: "Compact = month · Normal = 7-day week · Detailed = 3-day view."
                     onActivated: plannerWindow.calendarDensity = currentText
                 }
             }
@@ -702,9 +771,10 @@ Window {
             Row {
                 id: calDayNames
                 anchors { top: calNav.bottom; left: parent.left; right: parent.right }
-                height: 18
+                height: plannerWindow.calViewMode === "3day" ? 0 : 18
+                visible: plannerWindow.calViewMode !== "3day"
                 Repeater {
-                    model: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+                    model: plannerWindow.dayNames
                     Text {
                         width: calDayNames.width / 7
                         text: modelData
@@ -717,185 +787,295 @@ Window {
             Item {
                 id: calGrid
                 anchors { top: calDayNames.bottom; left: parent.left; right: parent.right }
-                height: totalHeight
+                height: plannerWindow.calGridAreaH
                 clip: true
 
-                readonly property real cellW: width / 7
-                readonly property int numWeeks: plannerWindow.weeksInMonth(plannerWindow.calendarYear, plannerWindow.calendarMonth)
+                readonly property real cellW: Math.max(1, (width - (plannerWindow.calColumns - 1) * 2) / plannerWindow.calColumns)
+                readonly property real cellH: plannerWindow.calViewMode === "month"
+                                              ? (plannerWindow.calRowUnit - 2) : (plannerWindow.calGridAreaH - 2)
 
-                readonly property var rowHeights: {
-                    var _sr          = plannerWindow.scheduleRevision
-                    var year         = plannerWindow.calendarYear
-                    var month        = plannerWindow.calendarMonth
-                    var numWeeks     = plannerWindow.weeksInMonth(year, month)
-                    var firstWeekday = plannerWindow.firstWeekdayOfMonth(year, month)
-                    var daysInMonth  = plannerWindow.daysInMonth(year, month)
-                    var heights = []
-                    for (var week = 0; week < numWeeks; week++) {
-                        var maxScheduled = 0
-                        for (var weekday = 0; weekday < 7; weekday++) {
-                            var dayNum = week * 7 + weekday - firstWeekday + 1
-                            if (dayNum >= 1 && dayNum <= daysInMonth) {
-                                var dateStr = year + "-" + (month < 10 ? "0" : "") + month
-                                                   + "-" + (dayNum < 10 ? "0" : "") + dayNum
-                                var count = schedulerService.countForDate(dateStr)
-                                if (count > maxScheduled) maxScheduled = count
+                Grid {
+                    columns: plannerWindow.calColumns
+                    spacing: 2
+
+                    Repeater {
+                        model: plannerWindow.planCalendarDays
+
+                        delegate: Rectangle {
+                            required property var modelData
+                            property var dd: modelData
+                            readonly property string dateStr: dd.dateStr
+
+                            readonly property int daysFromToday: {
+                                var today = new Date(); today.setHours(0, 0, 0, 0)
+                                return Math.round((new Date(dd.yy, dd.mm - 1, dd.dd) - today) / 86400000)
                             }
-                        }
-                        heights.push(plannerWindow.calBaseRowH
-                                     + Math.min(maxScheduled, plannerWindow.calMaxObjs) * plannerWindow.calPerObjH)
-                    }
-                    return heights
-                }
+                            readonly property bool isSelected:   daysFromToday === plannerWindow.nightOffset
+                            readonly property bool isToday:      daysFromToday === 0
+                            readonly property bool isPast:       daysFromToday < 0
+                            readonly property bool isSelectable: daysFromToday >= 0
 
-                readonly property var rowOffsets: {
-                    var heights = rowHeights; var offsets = [0]
-                    for (var i = 0; i < heights.length; i++) offsets.push(offsets[i] + heights[i])
-                    return offsets
-                }
-
-                readonly property real totalHeight: rowOffsets.length > 1
-                    ? rowOffsets[rowOffsets.length - 1] : 210
-
-                Repeater {
-                    model: 42
-
-                    delegate: Rectangle {
-                        required property int index
-
-                        readonly property int col:    index % 7
-                        readonly property int rowIdx: Math.floor(index / 7)
-                        readonly property int dayNum: index
-                            - plannerWindow.firstWeekdayOfMonth(plannerWindow.calendarYear, plannerWindow.calendarMonth)
-                            + 1
-                        readonly property bool isValid: dayNum >= 1
-                            && dayNum <= plannerWindow.daysInMonth(plannerWindow.calendarYear, plannerWindow.calendarMonth)
-                            && rowIdx < calGrid.numWeeks
-
-                        readonly property int cy: plannerWindow.calendarYear
-                        readonly property int cm: plannerWindow.calendarMonth
-
-                        readonly property string dateStr: isValid
-                            ? cy + "-" + (cm < 10 ? "0" : "") + cm
-                                  + "-" + (dayNum < 10 ? "0" : "") + dayNum
-                            : ""
-
-                        readonly property int daysFromToday: {
-                            if (!isValid) return -9999
-                            var today = new Date(); today.setHours(0, 0, 0, 0)
-                            return Math.round((new Date(cy, cm - 1, dayNum) - today) / 86400000)
-                        }
-
-                        readonly property var wd: {
-                            var _ = plannerWindow.weatherRevision
-                            if (!isValid) return null
-                            return weatherService.weatherForDate(dateStr)
-                        }
-
-                        readonly property bool isSelected:   isValid && daysFromToday === plannerWindow.nightOffset
-                        readonly property bool isToday:      isValid && daysFromToday === 0
-                        readonly property bool isPast:       isValid && daysFromToday < 0
-                        readonly property bool isSelectable: isValid && daysFromToday >= 0
-
-                        x: col * calGrid.cellW
-                        y: calGrid.rowOffsets.length > rowIdx ? calGrid.rowOffsets[rowIdx] : rowIdx * 42
-                        width:  calGrid.cellW
-                        height: calGrid.rowHeights.length > rowIdx ? calGrid.rowHeights[rowIdx] : 42
-                        visible: isValid
-
-                        color: isSelected
-                               ? pal.highlight
-                               : (isToday
-                                  ? Qt.rgba(pal.highlight.r, pal.highlight.g, pal.highlight.b, 0.22)
-                                  : (cellMouse.containsMouse && isSelectable
-                                     ? Qt.rgba(pal.highlight.r, pal.highlight.g, pal.highlight.b, 0.13)
-                                     : "transparent"))
-
-                        Rectangle {
-                            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-                            height: 1; color: pal.mid; opacity: 0.35
-                        }
-                        Rectangle {
-                            anchors { top: parent.top; bottom: parent.bottom; right: parent.right }
-                            width: 1; color: pal.mid; opacity: 0.35; visible: col < 6
-                        }
-
-                        Item {
-                            anchors { fill: parent; margins: 3 }
-                            opacity: isPast ? 0.5 : 1.0
-
-                            Text {
-                                id: cellDayNum
-                                anchors { top: parent.top; left: parent.left }
-                                text: dayNum; font.pixelSize: 11
-                                font.bold: isToday || isSelected
-                                color: isSelected ? pal.highlightedText : pal.windowText
+                            readonly property var wd: {
+                                var _ = plannerWindow.weatherRevision
+                                return weatherService.weatherForDate(dateStr)
                             }
 
-                            Text {
-                                anchors { top: parent.top; right: parent.right }
-                                text: {
-                                    if (!isValid) return ""
-                                    var d = new Date(cy, cm - 1, dayNum); d.setHours(0, 0, 0, 0)
-                                    return weatherService.getMoonPhase(d)
-                                }
-                                font.pixelSize: 12
-                            }
+                            width:  calGrid.cellW
+                            height: calGrid.cellH
+                            radius: 4
+                            border.color: isSelected ? pal.highlight : pal.mid
+                            border.width: isSelected ? 2 : 1
+                            clip: true
 
-                            Column {
-                                anchors { top: cellDayNum.bottom; topMargin: 1; left: parent.left; right: parent.right }
-                                spacing: 0
+                            color: isToday
+                                   ? Qt.rgba(pal.highlight.r, pal.highlight.g, pal.highlight.b, 0.18)
+                                   : (cellMouse.containsMouse && isSelectable
+                                      ? Qt.rgba(pal.highlight.r, pal.highlight.g, pal.highlight.b, 0.10)
+                                      : pal.base)
 
-                                Repeater {
-                                    model: {
-                                        var _ = plannerWindow.scheduleRevision
-                                        if (!isValid) return []
-                                        var objs = schedulerService.objectsForDate(dateStr)
-                                        var cap = plannerWindow.calMaxObjs
-                                        return objs.length > cap ? objs.slice(0, cap - 1) : objs
-                                    }
-                                    Text {
-                                        required property string modelData
-                                        width: parent.width; text: modelData
-                                        font.pixelSize: 10
-                                        color: isSelected ? pal.highlightedText : pal.highlight
-                                        elide: Text.ElideRight
-                                    }
-                                }
+                            Item {
+                                anchors { fill: parent; margins: 3 }
+                                z: 1
+                                opacity: dd.isOtherMonth ? 0.4 : (isPast ? 0.55 : 1.0)
 
                                 Text {
-                                    width: parent.width
-                                    text: {
-                                        var _ = plannerWindow.scheduleRevision
-                                        if (!isValid) return ""
-                                        var extra = schedulerService.countForDate(dateStr) - (plannerWindow.calMaxObjs - 1)
-                                        return extra > 0 ? "+" + extra + " more" : ""
-                                    }
-                                    font.pixelSize: 10; font.italic: true
-                                    color: isSelected ? pal.highlightedText : pal.placeholderText
-                                    visible: text !== ""
+                                    id: cellDayNum
+                                    anchors { top: parent.top; left: parent.left }
+                                    text: plannerWindow.calViewMode === "3day"
+                                          ? (dd.weekdayName + " " + dd.dayNum) : dd.dayNum
+                                    font.pixelSize: 11
+                                    font.bold: isToday || isSelected
+                                    color: pal.windowText
                                 }
+
+                                Row {
+                                    anchors { top: parent.top; right: parent.right }
+                                    spacing: 3
+                                    Text {
+                                        text: {
+                                            if (!(wd && wd.valid)) return ""
+                                            var s = weatherService.getWeatherEmoji(wd.weatherCode, wd.avgCloud)
+                                                    + " " + Math.round(wd.avgCloud) + "%"
+                                            if (wd.nightTemp !== 0) {
+                                                var t = weatherService.celsius ? Math.round(wd.nightTemp)
+                                                                               : Math.round(wd.nightTemp * 9 / 5 + 32)
+                                                s += "  🌡" + t + "°" + (weatherService.celsius ? "C" : "F")
+                                            }
+                                            if (wd.avgHumidity > 0) s += "  💧" + Math.round(wd.avgHumidity) + "%"
+                                            return s
+                                        }
+                                        font.pixelSize: 10
+                                        color: pal.windowText
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Text {
+                                        text: weatherService.getMoonPhase(new Date(dd.yy, dd.mm - 1, dd.dd))
+                                        font.pixelSize: 12
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                }
+
+                                Item {
+                                    id: pillsArea
+                                    anchors {
+                                        top: cellDayNum.bottom; topMargin: 2
+                                        left: parent.left; right: parent.right
+                                        bottom: plannerWindow.calViewMode === "3day" ? timeline.top : parent.bottom
+                                        bottomMargin: plannerWindow.calViewMode === "3day" ? 4 : 0
+                                    }
+                                    clip: true
+
+                                Column {
+                                    anchors { top: parent.top; left: parent.left; right: parent.right }
+                                    spacing: 2
+
+                                    Repeater {
+                                        model: {
+                                            var _ = plannerWindow.scheduleRevision
+                                            var objs = schedulerService.objectsForDate(dateStr)
+                                            var cap = plannerWindow.calMaxObjs
+                                            return objs.length > cap ? objs.slice(0, cap - 1) : objs
+                                        }
+                                        Rectangle {
+                                            required property string modelData
+                                            width: parent.width; height: 16; radius: 3
+                                            readonly property bool objSelected: plannerWindow.selectedObj
+                                                && plannerWindow.selectedObj.name === modelData
+                                            color: objMouse.containsMouse ? Qt.lighter(pal.highlight, 1.2) : pal.highlight
+                                            border.color: objSelected ? pal.highlightedText : "transparent"
+                                            border.width: objSelected ? 1 : 0
+
+                                            Text {
+                                                anchors { fill: parent; leftMargin: 4; rightMargin: 3 }
+                                                text: parent.modelData
+                                                color: pal.highlightedText
+                                                font.pixelSize: 9; font.bold: parent.objSelected
+                                                elide: Text.ElideRight
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+
+                                            MouseArea {
+                                                id: objMouse
+                                                anchors.fill: parent
+                                                enabled: isSelectable && plannerWindow.calViewMode !== "month"
+                                                hoverEnabled: true
+                                                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                                onClicked: plannerWindow.selectScheduledObject(daysFromToday, parent.modelData)
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        width: parent.width
+                                        text: {
+                                            var _ = plannerWindow.scheduleRevision
+                                            var extra = schedulerService.countForDate(dateStr) - (plannerWindow.calMaxObjs - 1)
+                                            return extra > 0 ? "+" + extra + " more" : ""
+                                        }
+                                        font.pixelSize: 10; font.italic: true
+                                        color: pal.placeholderText
+                                        visible: text !== ""
+                                    }
+                                }
+                                }
+
+                                Item {
+                                    id: timeline
+                                    visible: plannerWindow.calViewMode === "3day"
+                                    anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                                    height: parent.height / 3
+                                    clip: true
+                                    readonly property int nightMin: 720
+                                    readonly property int labelH: 12
+                                    readonly property int laneH: 16
+                                    readonly property int blockCount: {
+                                        var _ = plannerWindow.scheduleRevision
+                                        return schedulerService.blocksForDate(dateStr).length
+                                    }
+                                    function xOf(m) { return m / nightMin * width }
+                                    function minAt(x) {
+                                        var v = Math.round(x / Math.max(1, width) * nightMin / 15) * 15
+                                        return Math.max(0, Math.min(nightMin, v))
+                                    }
+
+                                    Repeater {
+                                        model: [0, 180, 360, 540, 720]
+                                        delegate: Rectangle {
+                                            required property int modelData
+                                            x: Math.min(timeline.width - 1, timeline.xOf(modelData))
+                                            y: timeline.labelH
+                                            width: 1; height: timeline.height - timeline.labelH
+                                            color: pal.mid; opacity: 0.4
+                                        }
+                                    }
+
+                                    Text {
+                                        anchors { left: parent.left; top: parent.top }
+                                        text: plannerWindow.fmtNightMin(0)
+                                        font.pixelSize: 8; color: pal.placeholderText
+                                    }
+                                    Text {
+                                        anchors { horizontalCenter: parent.horizontalCenter; top: parent.top }
+                                        text: plannerWindow.fmtNightMin(360)
+                                        font.pixelSize: 8; color: pal.placeholderText
+                                    }
+                                    Text {
+                                        anchors { right: parent.right; top: parent.top }
+                                        text: plannerWindow.fmtNightMin(720)
+                                        font.pixelSize: 8; color: pal.placeholderText
+                                    }
+
+                                    MouseArea {
+                                        id: trackMouse
+                                        anchors { left: parent.left; right: parent.right
+                                                  top: parent.top; topMargin: timeline.labelH; bottom: parent.bottom }
+                                        enabled: isSelectable && plannerWindow.selectedObj
+                                        property int startMin: -1
+                                        property int curMin: -1
+                                        onPressed: function(mouse) { startMin = timeline.minAt(mouse.x); curMin = startMin }
+                                        onPositionChanged: function(mouse) { if (startMin >= 0) curMin = timeline.minAt(mouse.x) }
+                                        onReleased: function(mouse) {
+                                            if (startMin >= 0 && plannerWindow.selectedObj) {
+                                                var a = Math.min(startMin, curMin), b = Math.max(startMin, curMin)
+                                                if (b - a >= 15)
+                                                    schedulerService.addBlock(dateStr, plannerWindow.selectedObj.name, a, b)
+                                            }
+                                            startMin = -1; curMin = -1
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        readonly property color baseCol: plannerWindow.selectedObj
+                                            ? plannerWindow.colorForObject(plannerWindow.selectedObj.name) : pal.highlight
+                                        visible: trackMouse.startMin >= 0 && trackMouse.curMin !== trackMouse.startMin
+                                        x: timeline.xOf(Math.min(trackMouse.startMin, trackMouse.curMin))
+                                        width: Math.abs(timeline.xOf(trackMouse.curMin) - timeline.xOf(trackMouse.startMin))
+                                        y: timeline.labelH + 1 + timeline.blockCount * timeline.laneH
+                                        height: timeline.laneH - 2
+                                        radius: 3
+                                        color: Qt.rgba(baseCol.r, baseCol.g, baseCol.b, 0.5)
+                                        border.color: pal.highlight; border.width: 1
+                                    }
+
+                                    Repeater {
+                                        model: {
+                                            var _ = plannerWindow.scheduleRevision
+                                            return schedulerService.blocksForDate(dateStr)
+                                        }
+                                        delegate: Rectangle {
+                                            required property var modelData
+                                            x: timeline.xOf(modelData.start)
+                                            width: Math.max(6, timeline.xOf(modelData.end) - timeline.xOf(modelData.start))
+                                            y: timeline.labelH + 1 + modelData.index * timeline.laneH
+                                            height: timeline.laneH - 2
+                                            radius: 3
+                                            color: plannerWindow.colorForObject(modelData.object)
+                                            border.color: Qt.darker(color, 1.4); border.width: 1
+                                            clip: true
+
+                                            Text {
+                                                anchors { fill: parent; leftMargin: 3; rightMargin: 3 }
+                                                text: modelData.object + " " + plannerWindow.fmtNightMin(modelData.start)
+                                                      + "–" + plannerWindow.fmtNightMin(modelData.end)
+                                                color: "white"
+                                                font.pixelSize: 8
+                                                elide: Text.ElideRight
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: schedulerService.removeBlockAt(dateStr, modelData.index)
+                                                ToolTip.visible: containsMouse
+                                                ToolTip.delay: 600
+                                                ToolTip.text: "Click to remove this time block"
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        anchors { left: parent.left; leftMargin: 4
+                                                  right: parent.right; rightMargin: 4
+                                                  top: parent.top; topMargin: timeline.labelH + 6 }
+                                        text: "Select an object, then drag across to block a time slot"
+                                        visible: !plannerWindow.selectedObj && timeline.blockCount === 0
+                                        font.pixelSize: 8; color: pal.placeholderText
+                                        wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
+                                    }
+                                }
+
                             }
 
-                            Text {
-                                anchors { bottom: parent.bottom; left: parent.left }
-                                text: (wd && wd.valid)
-                                      ? weatherService.getWeatherEmoji(wd.weatherCode, wd.avgCloud)
-                                        + " " + Math.round(wd.avgCloud) + "%"
-                                      : ""
-                                font.pixelSize: 10
-                                color: isSelected ? pal.highlightedText : pal.windowText
-                                elide: Text.ElideRight
+                            MouseArea {
+                                id: cellMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                enabled: isSelectable
+                                cursorShape: isSelectable ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                onClicked: plannerWindow.nightOffset = daysFromToday
                             }
-                        }
-
-                        MouseArea {
-                            id: cellMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            enabled: isSelectable
-                            cursorShape: isSelectable ? Qt.PointingHandCursor : Qt.ArrowCursor
-                            onClicked: plannerWindow.nightOffset = daysFromToday
                         }
                     }
                 }
