@@ -99,10 +99,25 @@ Window {
         plannerWindow.showManualEntry = false
     }
 
+    function detailedStartAz() {
+        var sx = 0, sy = 0, n = 0
+        for (var i = 0; i < 8; i++) {
+            if (viewSectors[i] === true) {
+                var a = i * 45 * Math.PI / 180
+                sx += Math.cos(a); sy += Math.sin(a); n++
+            }
+        }
+        if (n === 0 || Math.sqrt(sx * sx + sy * sy) < 1e-6) return 0
+        var az = Math.atan2(sy, sx) * 180 / Math.PI
+        return ((az % 360) + 360) % 360
+    }
+
     function openSkyArcDetailed() {
         skyArcDetailedWindow.latitude    = plannerWindow.latitude
         skyArcDetailedWindow.longitude   = plannerWindow.longitude
         skyArcDetailedWindow.nightOffset = plannerWindow.nightOffset
+        skyArcDetailedWindow.focusAltDeg = 0
+        skyArcDetailedWindow.focusAzDeg  = detailedStartAz()
         skyArcDetailedWindow.show()
         skyArcDetailedWindow.raise()
     }
@@ -463,6 +478,9 @@ Window {
                 flat: true
                 implicitHeight: 28
                 anchors.verticalCenter: parent.verticalCenter
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Request your current GPS position from the operating system."
                 enabled: locationService.status !== "Requesting…"
                          && locationService.status !== "Requesting via IP…"
                 onClicked: locationService.requestLocation()
@@ -474,6 +492,9 @@ Window {
                 implicitHeight: 28
                 anchors.verticalCenter: parent.verticalCenter
                 checkable: true
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Enter latitude and longitude manually\ninstead of using GPS."
                 checked: plannerWindow.showManualEntry
                 onClicked: plannerWindow.showManualEntry = !plannerWindow.showManualEntry
             }
@@ -484,6 +505,9 @@ Window {
             spacing: 4
             Button {
                 text: "‹"; flat: true; enabled: plannerWindow.nightOffset > 0
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Plan the previous night."
                 onClicked: plannerWindow.nightOffset--
                 implicitWidth: 28; implicitHeight: 28
             }
@@ -495,6 +519,9 @@ Window {
             }
             Button {
                 text: "›"; flat: true; enabled: plannerWindow.nightOffset < 30
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Plan the next night (up to 30 days ahead)."
                 onClicked: plannerWindow.nightOffset++
                 implicitWidth: 28; implicitHeight: 28
             }
@@ -551,6 +578,9 @@ Window {
                     text: "Apply"
                     implicitHeight: 32
                     anchors.verticalCenter: parent.verticalCenter
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: "Use the entered coordinates and recompute\ntonight's visible objects."
                     onClicked: plannerWindow.applyManualLocation()
                 }
 
@@ -559,6 +589,9 @@ Window {
                     flat: true
                     implicitHeight: 32
                     anchors.verticalCenter: parent.verticalCenter
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: "Discard the manual entry and keep the current location."
                     onClicked: {
                         plannerWindow.showManualEntry = false
                         manualEntryError.text = ""
@@ -576,9 +609,38 @@ Window {
             }
         }
 
+        Flickable {
+            id: pageFlick
+            anchors { top: manualEntryBar.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
+            contentWidth: pageContent.width
+            contentHeight: pageContent.height
+            clip: true
+            interactive: !skyArcHover.hovered
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar { id: pageScroll; policy: ScrollBar.AsNeeded }
+
+            Item {
+                id: pageContent
+                // Reserve the scrollbar's width so it never overlays the content.
+                width: pageFlick.width - pageScroll.width
+                height: topSection.height + obsBar.height + calSection.height
+
+                WheelHandler {
+                    enabled: skyArcHover.hovered
+                    onWheel: function(e) {
+                        if (e.angleDelta.y !== 0) {
+                            var f = e.angleDelta.y > 0 ? 1.15 : 0.87
+                            skyCanvas.zoom = Math.max(1.0, Math.min(12.0, skyCanvas.zoom * f))
+                        } else if (e.angleDelta.x !== 0) {
+                            skyCanvas.focusAz = skyCanvas.focusAz + (e.angleDelta.x > 0 ? 6 : -6)
+                            skyCanvas.clampFocusAz()
+                        }
+                    }
+                }
+
         Rectangle {
             id: obsBar
-            anchors { left: parent.left; right: parent.right; bottom: calSection.top }
+            anchors { top: topSection.bottom; left: parent.left; right: parent.right }
             height: plannerWindow.selectedObj ? 82 : 0
             clip: true
             color: Qt.rgba(pal.highlight.r, pal.highlight.g, pal.highlight.b, 0.04)
@@ -727,8 +789,8 @@ Window {
 
         Item {
             id: calSection
-            anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
-            height: calTopBorder.height + calNav.height + calDayNames.height + calGrid.height
+            anchors { top: obsBar.bottom; left: parent.left; right: parent.right }
+            height: calTopBorder.height + calNav.height + calDayNames.height + plannerWindow.calGridAreaH
 
             Rectangle {
                 id: calTopBorder
@@ -742,6 +804,9 @@ Window {
                 height: 28
                 Button {
                     text: "‹"; flat: true; implicitWidth: 32; implicitHeight: 28
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: "Show the previous period on the calendar."
                     onClicked: plannerWindow.planNavigate(-1)
                 }
                 Text {
@@ -753,6 +818,9 @@ Window {
                 }
                 Button {
                     text: "›"; flat: true; implicitWidth: 32; implicitHeight: 28
+                    ToolTip.visible: hovered
+                    ToolTip.delay: 500
+                    ToolTip.text: "Show the next period on the calendar."
                     onClicked: plannerWindow.planNavigate(1)
                 }
                 ComboBox {
@@ -849,28 +917,47 @@ Window {
                                 }
 
                                 Row {
+                                    id: wxRow
                                     anchors { top: parent.top; right: parent.right }
-                                    spacing: 3
+                                    spacing: 4
+
                                     Text {
                                         text: {
                                             if (!(wd && wd.valid)) return ""
-                                            var s = weatherService.getWeatherEmoji(wd.weatherCode, wd.avgCloud)
-                                                    + " " + Math.round(wd.avgCloud) + "%"
+                                            var parts = [ weatherService.getWeatherEmoji(wd.weatherCode, wd.avgCloud)
+                                                          + " " + Math.round(wd.avgCloud) + "%" ]
                                             if (wd.nightTemp !== 0) {
                                                 var t = weatherService.celsius ? Math.round(wd.nightTemp)
                                                                                : Math.round(wd.nightTemp * 9 / 5 + 32)
-                                                s += "  🌡" + t + "°" + (weatherService.celsius ? "C" : "F")
+                                                parts.push("🌡 " + t + "°" + (weatherService.celsius ? "C" : "F"))
                                             }
-                                            if (wd.avgHumidity > 0) s += "  💧" + Math.round(wd.avgHumidity) + "%"
-                                            return s
+                                            if (plannerWindow.calViewMode === "month") {
+                                                if (wd.avgHumidity > 0) parts.push("💧 " + Math.round(wd.avgHumidity) + "%")
+                                            } else {
+                                                var detailed = plannerWindow.calViewMode === "3day"
+                                                if (wd.windSpeed > 0) {
+                                                    var w = Math.round(wd.windSpeed) + " km/h " + plannerWindow.compass16(wd.windDir)
+                                                    parts.push(detailed ? ("💨 " + w) : w)
+                                                }
+                                                if (detailed && (wd.sunrise !== "" || wd.sunset !== ""))
+                                                    parts.push("🌇 " + wd.sunset + " – 🌅 " + wd.sunrise)
+                                            }
+                                            return parts.join("  |  ")
                                         }
-                                        font.pixelSize: 10
+                                        font.pixelSize: plannerWindow.calViewMode === "month" ? 10 : 12
                                         color: pal.windowText
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                     Text {
+                                        text: "|"
+                                        visible: wd && wd.valid
+                                        font.pixelSize: plannerWindow.calViewMode === "month" ? 10 : 12
+                                        color: pal.placeholderText
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
+                                    Text {
                                         text: weatherService.getMoonPhase(new Date(dd.yy, dd.mm - 1, dd.dd))
-                                        font.pixelSize: 12
+                                        font.pixelSize: plannerWindow.calViewMode === "month" ? 12 : 14
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                 }
@@ -878,7 +965,7 @@ Window {
                                 Item {
                                     id: pillsArea
                                     anchors {
-                                        top: cellDayNum.bottom; topMargin: 2
+                                        top: wxRow.bottom; topMargin: 2
                                         left: parent.left; right: parent.right
                                         bottom: plannerWindow.calViewMode === "3day" ? timeline.top : parent.bottom
                                         bottomMargin: plannerWindow.calViewMode === "3day" ? 4 : 0
@@ -1084,7 +1171,9 @@ Window {
 
         Item {
             id: topSection
-            anchors { top: manualEntryBar.bottom; left: parent.left; right: parent.right; bottom: obsBar.top }
+            anchors { top: parent.top; left: parent.left; right: parent.right }
+            height: Math.max(detailColumn.height + 36,
+                             Math.max(200, pageFlick.height - obsBar.height - calSection.height))
 
             Item {
                 id: listPanel
@@ -1367,6 +1456,9 @@ Window {
 
                     Button {
                         text: "Remove"
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: "Remove the selected object from this night's schedule."
                         enabled: {
                             var _ = plannerWindow.scheduleRevision
                             return plannerWindow.selectedObj !== null
@@ -1382,6 +1474,9 @@ Window {
 
                     Button {
                         text: "Add"
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: "Add the selected object to this night's schedule."
                         enabled: {
                             var _ = plannerWindow.scheduleRevision
                             return plannerWindow.selectedObj !== null
@@ -1407,15 +1502,10 @@ Window {
                 anchors { top: parent.top; left: divider.right; right: parent.right; bottom: parent.bottom }
                 clip: true
 
-                Flickable {
+                Item {
                     id: detailFlick
                     anchors.fill: parent
                     clip: true
-                    contentWidth:  Math.max(width,  detailColumn.width  + 36)
-                    contentHeight: Math.max(height, detailColumn.height + 36)
-                    boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical:   ScrollBar { policy: ScrollBar.AsNeeded }
-                    ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
 
                     Column {
                         id: detailColumn
@@ -1534,16 +1624,37 @@ Window {
 
                         Text {
                             anchors { left: parent.left; verticalCenter: parent.verticalCenter }
-                            text: "Sky Arc  —  " + plannerWindow.nightLabel()
+                            text: "Sky Arc  —  " + plannerWindow.nightLabel() + "   ·   drag to pan · scroll or +/− to zoom"
                             font.pixelSize: 12; color: pal.placeholderText
                         }
 
-                        Button {
+                        Row {
                             anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                            text: "Detailed View  ⤢"
-                            flat: true
-                            implicitHeight: 24
-                            onClicked: plannerWindow.openSkyArcDetailed()
+                            spacing: 4
+
+                            Button {
+                                text: "−"; flat: true; implicitWidth: 26; implicitHeight: 24
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 500
+                                ToolTip.text: "Zoom out the horizon."
+                                onClicked: skyCanvas.zoom = Math.max(1.0, skyCanvas.zoom / 1.3)
+                            }
+                            Button {
+                                text: "+"; flat: true; implicitWidth: 26; implicitHeight: 24
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 500
+                                ToolTip.text: "Zoom in on the horizon."
+                                onClicked: skyCanvas.zoom = Math.min(12.0, skyCanvas.zoom * 1.3)
+                            }
+                            Button {
+                                text: "Detailed View  ⤢"
+                                flat: true
+                                implicitHeight: 24
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 500
+                                ToolTip.text: "Open the full 360° interactive sky dome in its own window."
+                                onClicked: plannerWindow.openSkyArcDetailed()
+                            }
                         }
                     }
 
@@ -1558,19 +1669,58 @@ Window {
                         property int watchNight:  plannerWindow.nightOffset
                         property real watchLat:   plannerWindow.latitude
                         property real watchLon:   plannerWindow.longitude
-                        property var  watchSectors: plannerWindow.viewSectors
-                        property real watchVMinAlt: plannerWindow.viewMinAlt
-                        property bool watchClock:   plannerWindow.clockLocal
+                        property bool watchClock: plannerWindow.clockLocal
 
-                        onWatchObjChanged:     Qt.callLater(requestPaint)
-                        onWatchNightChanged:   Qt.callLater(requestPaint)
-                        onWatchLatChanged:     Qt.callLater(requestPaint)
-                        onWatchLonChanged:     Qt.callLater(requestPaint)
-                        onWatchSectorsChanged: Qt.callLater(requestPaint)
-                        onWatchVMinAltChanged: Qt.callLater(requestPaint)
-                        onWatchClockChanged:   Qt.callLater(requestPaint)
-                        onWidthChanged:        Qt.callLater(requestPaint)
-                        onHeightChanged:       Qt.callLater(requestPaint)
+                        property real focusAz: 0
+                        property real zoom: 1.0
+                        property bool needCenter: true
+                        property real projScale: 100
+                        property var  viewSectors: plannerWindow.viewSectors
+
+                        onWatchObjChanged:   { needCenter = true; Qt.callLater(requestPaint) }
+                        onWatchNightChanged: { needCenter = true; Qt.callLater(requestPaint) }
+                        onWatchLatChanged:   Qt.callLater(requestPaint)
+                        onWatchLonChanged:   Qt.callLater(requestPaint)
+                        onWatchClockChanged: Qt.callLater(requestPaint)
+                        onWidthChanged:      Qt.callLater(requestPaint)
+                        onHeightChanged:     Qt.callLater(requestPaint)
+                        onFocusAzChanged:    Qt.callLater(requestPaint)
+                        onZoomChanged:       Qt.callLater(requestPaint)
+                        onViewSectorsChanged: { clampFocusAz(); Qt.callLater(requestPaint) }
+
+                        // Selected viewable-area band as { center, span } in degrees, or null when
+                        // all (or no) directions are enabled (free 360° panning).
+                        function azBand() {
+                            var sel = []
+                            for (var i = 0; i < 8; i++) if (viewSectors[i] === true) sel.push(i * 45)
+                            if (sel.length === 0 || sel.length === 8) return null
+                            sel.sort(function(a, b) { return a - b })
+                            var maxGap = -1, gapAt = 0
+                            for (var k = 0; k < sel.length; k++) {
+                                var next = (k + 1 < sel.length) ? sel[k + 1] : sel[0] + 360
+                                var gap = next - sel[k]
+                                if (gap > maxGap) { maxGap = gap; gapAt = k }
+                            }
+                            var startAz = sel[(gapAt + 1) % sel.length]
+                            var spanCenters = 360 - maxGap
+                            return { center: startAz + spanCenters / 2, span: spanCenters + 45 }
+                        }
+
+                        function clampFocusAz() {
+                            var band = azBand()
+                            if (!band) { focusAz = ((focusAz % 360) + 360) % 360; return }
+                            var half = (width / 2) / projScale * 180 / Math.PI
+                            var d = focusAz - band.center
+                            while (d >  180) d -= 360
+                            while (d < -180) d += 360
+                            var fa = band.center + d
+                            var lo = band.center - band.span / 2 + half
+                            var hi = band.center + band.span / 2 - half
+                            if (lo > hi) fa = band.center
+                            else if (fa < lo) fa = lo
+                            else if (fa > hi) fa = hi
+                            focusAz = fa
+                        }
 
                         onPaint: {
                             var ctx = getContext("2d")
@@ -1579,17 +1729,142 @@ Window {
                             var o = plannerWindow.selectedObj
                             if (!o || !plannerWindow.hasLocation || height < 40) return
 
-                            var lat  = plannerWindow.latitude
-                            var lon  = plannerWindow.longitude
-                            var padL = 26, padR = 8
-                            var compassStripH = 13
-                            var horizonY = height - 16 - compassStripH
-                            var altScale = horizonY - 4
-                            var plotW = Math.max(1, width - padL - padR)
+                            var DEG = Math.PI / 180, RAD = 180 / Math.PI
+                            var lat = plannerWindow.latitude
+                            var lon = plannerWindow.longitude
+                            var bottomAxisH = 16
+                            var topMargin = 12
+                            var cx = width / 2
+                            var cy = height - bottomAxisH
+                            var scaleY = (cy - topMargin) / (Math.PI / 2)
+                            var scaleX = scaleY * skyCanvas.zoom
+                            var cMax = 2.0
+                            projScale = scaleX
+
+                            var transitAlt = plannerService.altitudeDeg(0, o.decDeg, lat, 0)
+                            var transitAz  = plannerService.azimuthDeg(0, o.decDeg, lat, 0)
+                            if (needCenter) {
+                                skyCanvas.focusAz = ((transitAz % 360) + 360) % 360
+                                needCenter = false
+                                skyCanvas.clampFocusAz()
+                            }
+                            var az0 = skyCanvas.focusAz * DEG
+
+                            function proj(altDeg, azDeg) {
+                                var alt = altDeg * DEG, az = azDeg * DEG
+                                var dAz = az - az0
+                                var sa = Math.sin(alt), ca = Math.cos(alt)
+                                var cosc = Math.max(-1, Math.min(1, ca * Math.cos(dAz)))
+                                var c = Math.acos(cosc)
+                                var k = (c < 1e-6) ? 1 : c / Math.sin(c)
+                                return { x: cx + scaleX * k * ca * Math.sin(dAz), y: cy - scaleY * k * sa, c: c }
+                            }
+                            function strokeSky(samples) {
+                                ctx.beginPath()
+                                var drawing = false
+                                for (var i = 0; i < samples.length; i++) {
+                                    var p = proj(samples[i][0], samples[i][1])
+                                    if (p.c > cMax) { drawing = false; continue }
+                                    if (!drawing) { ctx.moveTo(p.x, p.y); drawing = true }
+                                    else ctx.lineTo(p.x, p.y)
+                                }
+                                ctx.stroke()
+                            }
+                            function drawPath(decDeg, color, lw) {
+                                ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.setLineDash([])
+                                ctx.beginPath()
+                                var drawing = false
+                                for (var ha = 0; ha <= 360; ha += 2) {
+                                    var palt = plannerService.altitudeDeg(0, decDeg, lat, ha)
+                                    if (palt < 0) { drawing = false; continue }
+                                    var paz = plannerService.azimuthDeg(0, decDeg, lat, ha)
+                                    var pp = proj(palt, paz)
+                                    if (pp.c > cMax) { drawing = false; continue }
+                                    if (!drawing) { ctx.moveTo(pp.x, pp.y); drawing = true }
+                                    else ctx.lineTo(pp.x, pp.y)
+                                }
+                                ctx.stroke()
+                            }
 
                             var midnight = plannerWindow.localMidnightUTC()
                             var jdMid    = plannerService.toJD(midnight.getTime())
                             var lstMid   = plannerService.lst(jdMid, lon)
+                            function clockAt(h) {
+                                var t = new Date(midnight.getTime() + h * 3600000)
+                                var utcH = t.getUTCHours() + t.getUTCMinutes() / 60.0 + t.getUTCSeconds() / 3600.0
+                                return plannerWindow.fmtHHMM(utcH)
+                            }
+                            function altAt(h) {
+                                return plannerService.altitudeDeg(o.raHours, o.decDeg, lat,
+                                                                  plannerService.lst(jdMid + h / 24.0, lon))
+                            }
+                            function azAt(h) {
+                                return plannerService.azimuthDeg(o.raHours, o.decDeg, lat,
+                                                                 plannerService.lst(jdMid + h / 24.0, lon))
+                            }
+
+                            var pxPerDeg = scaleX * DEG
+                            var tickStep = 45
+                            if (skyCanvas.zoom > 1.2) {
+                                var cand = [30, 15, 10, 5, 2, 1]
+                                for (var ti = 0; ti < cand.length; ti++)
+                                    if (cand[ti] * pxPerDeg >= 30) tickStep = cand[ti]
+                            }
+                            var halfSpanDeg = (width / 2) / scaleX * RAD + tickStep
+                            var azStart = Math.floor((skyCanvas.focusAz - halfSpanDeg) / tickStep) * tickStep
+
+                            ctx.setLineDash([2, 4])
+                            for (var ringAlt = 15; ringAlt <= 75; ringAlt += 15) {
+                                ctx.strokeStyle = pal.mid.toString(); ctx.lineWidth = 0.5
+                                var ring = []
+                                for (var ra = 0; ra <= 360; ra += 3) ring.push([ringAlt, ra])
+                                strokeSky(ring)
+                            }
+
+                            for (var spk = azStart; spk <= skyCanvas.focusAz + halfSpanDeg; spk += tickStep) {
+                                var spkMod = ((spk % 360) + 360) % 360
+                                var isCardSpoke = (spkMod % 45 === 0)
+                                var meridian = (spkMod === 0 || spkMod === 180)
+                                ctx.setLineDash(meridian ? [] : [2, 4])
+                                ctx.lineWidth = meridian ? 1.0 : (isCardSpoke ? 0.7 : 0.4)
+                                ctx.strokeStyle = pal.mid.toString()
+                                var spoke = []
+                                for (var sa2 = 0; sa2 <= 88; sa2 += 2) spoke.push([sa2, spk])
+                                strokeSky(spoke)
+                            }
+                            ctx.setLineDash([])
+
+                            ctx.strokeStyle = pal.placeholderText.toString(); ctx.lineWidth = 1.3
+                            var horizon = []
+                            for (var hz = 0; hz <= 360; hz += 2) horizon.push([0, hz])
+                            strokeSky(horizon)
+
+                            ctx.fillStyle = pal.placeholderText.toString(); ctx.font = "9px sans-serif"; ctx.textAlign = "left"
+                            for (var labAlt = 15; labAlt <= 75; labAlt += 15) {
+                                var lp = proj(labAlt, skyCanvas.focusAz)
+                                ctx.fillText(labAlt + "°", cx + 3, lp.y + 3)
+                            }
+
+                            var cardNames = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+                            ctx.textAlign = "center"
+                            for (var az = azStart; az <= skyCanvas.focusAz + halfSpanDeg; az += tickStep) {
+                                var azMod = ((az % 360) + 360) % 360
+                                var cp = proj(0, az)
+                                if (cp.x < 2 || cp.x > width - 2) continue
+                                var card = (azMod % 45 === 0)
+                                ctx.setLineDash([])
+                                ctx.strokeStyle = pal.mid.toString(); ctx.lineWidth = card ? 1 : 0.5
+                                ctx.beginPath(); ctx.moveTo(cp.x, cy); ctx.lineTo(cp.x, cy - (card ? 6 : 3)); ctx.stroke()
+                                if (card) {
+                                    var nm = cardNames[Math.round(azMod / 45) % 8]
+                                    ctx.font = (nm.length === 1) ? "bold 11px sans-serif" : "10px sans-serif"
+                                    ctx.fillStyle = (nm.length === 1) ? pal.windowText.toString() : pal.placeholderText.toString()
+                                    ctx.fillText(nm, cp.x, cy + 13)
+                                } else {
+                                    ctx.font = "8px sans-serif"; ctx.fillStyle = pal.placeholderText.toString()
+                                    ctx.fillText(azMod + "°", cp.x, cy + 12)
+                                }
+                            }
 
                             function sunAlt(jd) {
                                 var T          = (jd - 2451545.0) / 36525.0
@@ -1603,200 +1878,75 @@ Window {
                                 var dec = Math.asin(Math.sin(obliquity) * Math.sin(eclipLon)) * 180 / Math.PI
                                 return plannerService.altitudeDeg(raH, dec, lat, plannerService.lst(jd, lon))
                             }
+                            var tSet = null, tRise = null
+                            var prevSun = sunAlt(jdMid + (-12) / 24.0)
+                            for (var hh = -11.9; hh <= 12.0001; hh += 0.1) {
+                                var ss = sunAlt(jdMid + hh / 24.0)
+                                if (tSet === null && prevSun >= 0 && ss < 0) tSet = hh
+                                else if (tSet !== null && tRise === null && prevSun < 0 && ss >= 0) tRise = hh
+                                prevSun = ss
+                            }
+                            if (tSet === null)  tSet = -6
+                            if (tRise === null) tRise = 6
 
-                            function clockAt(h) {
-                                var t = new Date(midnight.getTime() + h * 3600000)
-                                var utcH = t.getUTCHours() + t.getUTCMinutes() / 60.0
-                                         + t.getUTCSeconds() / 3600.0
-                                return plannerWindow.fmtHHMM(utcH)
+                            var maxNightAlt = -999
+                            for (var nk = 0; nk <= 48; nk++) {
+                                var na = altAt(tSet + (tRise - tSet) * nk / 48)
+                                if (na > maxNightAlt) maxNightAlt = na
                             }
 
-                            function altAt(h) {
-                                return plannerService.altitudeDeg(o.raHours, o.decDeg, lat,
-                                                                  plannerService.lst(jdMid + h / 24.0, lon))
-                            }
-                            function azAt(h) {
-                                return plannerService.azimuthDeg(o.raHours, o.decDeg, lat,
-                                                                 plannerService.lst(jdMid + h / 24.0, lon))
-                            }
-                            function yForAlt(alt) { return horizonY - (alt / 90.0) * altScale }
-
-                            var hStart = -6, hEnd = 6
-                            var span = hEnd - hStart
-                            function xOf(h) { return padL + (h - hStart) / span * plotW }
-
-                            var shadeSteps = Math.max(48, Math.round(plotW / 2))
-                            for (var i = 0; i < shadeSteps; i++) {
-                                var segStartH = hStart + span * i / shadeSteps
-                                var segEndH   = hStart + span * (i + 1) / shadeSteps
-                                var sa = sunAlt(jdMid + (segStartH + segEndH) / 2 / 24.0)
-                                var twilightColor = null
-                                if      (sa >= 0)   twilightColor = "rgba(160,110,50,0.20)"
-                                else if (sa >= -6)  twilightColor = "rgba(160,100,40,0.13)"
-                                else if (sa >= -12) twilightColor = "rgba(60,80,140,0.10)"
-                                else if (sa >= -18) twilightColor = "rgba(30,50,100,0.07)"
-                                if (twilightColor) {
-                                    ctx.fillStyle = twilightColor
-                                    ctx.fillRect(xOf(segStartH), 0, xOf(segEndH) - xOf(segStartH) + 0.5, horizonY)
-                                }
-                            }
-
-                            if (plannerWindow.viewSectors.indexOf(false) >= 0) {
-                                for (var j = 0; j < shadeSteps; j++) {
-                                    var sampleH = hStart + span * (j + 0.5) / shadeSteps
-                                    if (!plannerWindow.azInSweep(azAt(sampleH))) {
-                                        ctx.fillStyle = "rgba(150,90,90,0.11)"
-                                        ctx.fillRect(xOf(hStart + span * j / shadeSteps), 0,
-                                                     plotW / shadeSteps + 0.5, horizonY)
-                                    }
-                                }
-                            }
-                            if (plannerWindow.viewMinAlt > 15) {
-                                var floorBandY = yForAlt(plannerWindow.viewMinAlt)
-                                ctx.fillStyle = "rgba(150,90,90,0.09)"
-                                ctx.fillRect(padL, floorBandY, plotW, horizonY - floorBandY)
-                            }
-
-                            ctx.strokeStyle = pal.mid.toString()
-                            ctx.lineWidth = 1; ctx.setLineDash([])
-                            ctx.beginPath(); ctx.moveTo(padL, horizonY); ctx.lineTo(width - padR, horizonY); ctx.stroke()
-
-                            ctx.font = "10px sans-serif"
-                            ctx.fillStyle = pal.placeholderText.toString()
-                            ctx.textAlign = "left"
-
-                            var planningLimitY = yForAlt(15.0)
-                            ctx.strokeStyle = pal.mid.toString()
-                            ctx.setLineDash([2, 6]); ctx.lineWidth = 0.5
-                            ctx.beginPath(); ctx.moveTo(padL, planningLimitY); ctx.lineTo(width - padR, planningLimitY); ctx.stroke()
-                            ctx.fillText("15°", 2, planningLimitY + 4)
-
-                            for (var gridAlt = 30; gridAlt <= 80; gridAlt += 30) {
-                                var gridY = yForAlt(gridAlt)
-                                ctx.setLineDash([2, 4]); ctx.lineWidth = 0.5
-                                ctx.strokeStyle = pal.mid.toString()
-                                ctx.beginPath(); ctx.moveTo(padL, gridY); ctx.lineTo(width - padR, gridY); ctx.stroke()
-                                ctx.fillText(gridAlt + "°", 2, gridY + 4)
-                            }
-                            ctx.setLineDash([])
-
-                            if (plannerWindow.viewMinAlt > 15) {
-                                var floorLineY = yForAlt(plannerWindow.viewMinAlt)
-                                ctx.strokeStyle = "rgba(210,130,130,0.9)"
-                                ctx.setLineDash([4, 4]); ctx.lineWidth = 1
-                                ctx.beginPath(); ctx.moveTo(padL, floorLineY); ctx.lineTo(width - padR, floorLineY); ctx.stroke()
-                                ctx.setLineDash([])
-                                ctx.fillStyle = pal.placeholderText.toString(); ctx.textAlign = "left"
-                                ctx.fillText(plannerWindow.viewMinAlt.toFixed(0) + "°", 2, floorLineY - 2)
-                            }
-
-                            ctx.fillStyle = pal.placeholderText.toString()
-                            ctx.font = "10px sans-serif"
-                            var hourStep = span > 14 ? 2 : 1
-                            var firstHour = Math.ceil(hStart), lastHour = Math.floor(hEnd)
-                            for (var labelH = firstHour; labelH <= lastHour; labelH += hourStep) {
-                                var labelX = xOf(labelH)
-                                ctx.strokeStyle = pal.mid.toString()
-                                ctx.setLineDash([2, 5]); ctx.lineWidth = 0.5
-                                ctx.beginPath(); ctx.moveTo(labelX, 0); ctx.lineTo(labelX, horizonY); ctx.stroke()
-                                ctx.setLineDash([])
-                                ctx.textAlign = (labelH === firstHour) ? "left" : (labelH === lastHour ? "right" : "center")
-                                ctx.fillText(clockAt(labelH), labelX, horizonY + 11)
-                            }
-
-                            ctx.font = "9px sans-serif"
-                            ctx.textAlign = "center"
-                            for (var compassH = firstHour; compassH <= lastHour; compassH += hourStep) {
-                                var compassAlt = altAt(compassH)
-                                if (compassAlt < 0) continue
-                                var compassAz = azAt(compassH)
-                                ctx.fillStyle = plannerWindow.inView(compassAz, compassAlt) ? pal.highlight.toString()
-                                                                                            : pal.placeholderText.toString()
-                                ctx.fillText(plannerWindow.compass16(compassAz), xOf(compassH), horizonY + 24)
-                            }
-
-                            var lstToTransit = ((o.raHours * 15.0 - lstMid) % 360 + 360) % 360
-                            if (lstToTransit > 180) lstToTransit -= 360
-                            var transitH    = lstToTransit / 15.0
-                            var showTransit = transitH >= hStart && transitH <= hEnd
-                            var transitX    = xOf(transitH)
-                            var transitAlt  = -999
-                            if (showTransit) {
-                                transitAlt = altAt(transitH)
-                                if (transitAlt >= 15) {
-                                    ctx.strokeStyle = pal.mid.toString()
-                                    ctx.setLineDash([3, 5]); ctx.lineWidth = 1
-                                    ctx.beginPath()
-                                    ctx.moveTo(transitX, 0); ctx.lineTo(transitX, horizonY)
-                                    ctx.stroke(); ctx.setLineDash([])
-                                }
-                            }
-
-                            var riseX = -1, riseH = 0
-                            var setX  = -1, setH  = 0
-                            var prevAlt = null, prevX = null, prevY = null, prevH = null
-                            var arcSteps = 180
-                            var inViewColor    = pal.highlight.toString()
-                            var outOfViewColor = pal.placeholderText.toString()
-
-                            for (var step = 0; step <= arcSteps; step++) {
-                                var h   = hStart + span * step / arcSteps
-                                var alt = altAt(h)
-                                var x   = xOf(h)
-                                var y   = yForAlt(alt)
-
-                                if (prevAlt !== null) {
-                                    if (prevAlt < 15.0 && alt >= 15.0) {
-                                        var riseFrac = (15.0 - prevAlt) / (alt - prevAlt)
-                                        riseX = prevX + riseFrac * (x - prevX)
-                                        riseH = prevH + riseFrac * (h - prevH)
-                                    } else if (prevAlt >= 15.0 && alt < 15.0) {
-                                        var setFrac = (prevAlt - 15.0) / (prevAlt - alt)
-                                        setX = prevX + setFrac * (x - prevX)
-                                        setH = prevH + setFrac * (h - prevH)
-                                    }
-                                    if (prevAlt >= 15.0 && alt >= 15.0) {
-                                        var segInView = plannerWindow.inView(azAt(h), alt)
-                                        ctx.beginPath()
-                                        ctx.moveTo(prevX, prevY); ctx.lineTo(x, y)
-                                        ctx.strokeStyle = segInView ? inViewColor : outOfViewColor
-                                        ctx.lineWidth   = segInView ? 2.5 : 1.3
-                                        ctx.stroke()
-                                    }
-                                }
-                                prevAlt = alt; prevX = x; prevY = y; prevH = h
-                            }
-
-                            var midnightAlt = altAt(0)
-                            if (midnightAlt >= 15.0 && hStart <= 0 && hEnd >= 0) {
-                                ctx.fillStyle = plannerWindow.inView(azAt(0), midnightAlt) ? inViewColor : outOfViewColor
-                                ctx.beginPath()
-                                ctx.arc(xOf(0), yForAlt(midnightAlt), 4, 0, 2 * Math.PI)
-                                ctx.fill()
-                            }
-
-                            if (showTransit && transitAlt >= 15) {
-                                var transitLabelY = yForAlt(transitAlt)
-                                ctx.font = "10px sans-serif"
+                            if (maxNightAlt < 0) {
                                 ctx.fillStyle = pal.placeholderText.toString()
-                                ctx.textAlign = "center"
-                                ctx.fillText(transitAlt.toFixed(0) + "°  ·  " + clockAt(transitH)
-                                             + "  " + plannerWindow.compass16(azAt(transitH)),
-                                             transitX, Math.max(transitLabelY - 7, 11))
+                                ctx.font = "12px sans-serif"; ctx.textAlign = "center"
+                                ctx.fillText((o.commonName && o.commonName !== "" ? o.commonName : o.name)
+                                             + " stays below the horizon tonight.", cx, topMargin + 8)
+                                return
                             }
 
-                            ctx.font = "10px sans-serif"
-                            ctx.fillStyle = pal.placeholderText.toString()
-                            if (riseX >= 0) {
-                                ctx.textAlign = riseX < padL + plotW * 0.2 ? "left" : "center"
-                                ctx.fillText("▲ " + clockAt(riseH) + " " + plannerWindow.compass16(azAt(riseH)),
-                                             Math.max(riseX, padL), horizonY - 5)
+                            drawPath(o.decDeg, pal.highlight.toString(), 2.5)
+
+                            if (transitAlt >= 0) {
+                                var tp = proj(transitAlt, transitAz)
+                                if (tp.c <= cMax) {
+                                    var lstToTransit = ((o.raHours * 15.0 - lstMid) % 360 + 360) % 360
+                                    if (lstToTransit > 180) lstToTransit -= 360
+                                    ctx.fillStyle = pal.highlight.toString()
+                                    ctx.beginPath(); ctx.arc(tp.x, tp.y, 4, 0, 2 * Math.PI); ctx.fill()
+                                    ctx.fillStyle = pal.windowText.toString(); ctx.font = "10px sans-serif"; ctx.textAlign = "center"
+                                    ctx.fillText(transitAlt.toFixed(0) + "°  ·  " + clockAt(lstToTransit / 15.0),
+                                                 tp.x, Math.max(tp.y - 8, topMargin + 4))
+                                }
                             }
-                            if (setX >= 0) {
-                                ctx.textAlign = setX > padL + plotW * 0.8 ? "right" : "center"
-                                ctx.fillText("▼ " + clockAt(setH) + " " + plannerWindow.compass16(azAt(setH)),
-                                             Math.min(setX, width - padR), horizonY - 5)
+
+                            function marker(h, glyph) {
+                                var ma = altAt(h)
+                                if (ma < 0) return
+                                var mp = proj(ma, azAt(h))
+                                if (mp.c > cMax) return
+                                ctx.fillStyle = pal.windowText.toString()
+                                ctx.beginPath(); ctx.arc(mp.x, mp.y, 3, 0, 2 * Math.PI); ctx.fill()
+                                ctx.font = "10px sans-serif"; ctx.textAlign = "center"
+                                ctx.fillStyle = pal.placeholderText.toString()
+                                ctx.fillText(glyph + " " + clockAt(h), mp.x, mp.y - 6)
                             }
+                            marker(tSet, "▲")
+                            marker(tRise, "▼")
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                            property real lastX: 0
+                            onPressed: function(m) { lastX = m.x }
+                            onPositionChanged: function(m) {
+                                if (!pressed) return
+                                var dDeg = (m.x - lastX) / skyCanvas.projScale * 180 / Math.PI
+                                skyCanvas.focusAz = skyCanvas.focusAz - dDeg
+                                skyCanvas.clampFocusAz()
+                                lastX = m.x
+                            }
+
+                            HoverHandler { id: skyArcHover }
                         }
                     }
 
@@ -2013,6 +2163,9 @@ Window {
                                 id: skyFilterCheck
                                 text: "Show only objects in my sky"
                                 font.pixelSize: 11
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 500
+                                ToolTip.text: "Filter the Observable Objects list to targets that rise\ninto your selected directions and above the altitude floor."
                                 checked: plannerWindow.viewFilterEnabled
                                 onToggled: plannerWindow.viewFilterEnabled = checked
                                 anchors.verticalCenter: parent.verticalCenter
@@ -2022,6 +2175,9 @@ Window {
                                 text: "All sky"
                                 flat: true; implicitHeight: parent.parent.fieldH
                                 anchors.verticalCenter: parent.verticalCenter
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 500
+                                ToolTip.text: "Reset the viewable area: enable all directions\nand the 15° minimum altitude."
                                 enabled: plannerWindow.viewAreaActive
                                 onClicked: {
                                     plannerWindow.viewSectors = [true, true, true, true, true, true, true, true]
@@ -2033,6 +2189,8 @@ Window {
                     }
                 }
                 }
+            }
+        }
             }
         }
     }

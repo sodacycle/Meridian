@@ -19,10 +19,10 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **Observation Scheduler** — per-night target scheduling with QSettings persistence; scheduled objects appear on the planner calendar.
 - **DSO Catalog** — built-in NGC/IC/Messier catalog with 13 000+ objects. Supports Seestar S50 mode (auto-filters to objects the smart telescope can reach).
 - **Seestar Integration** — status panel showing telescope connection, free space, and telescope file detection. When `MyWorks/` is found on the Seestar volume, it is automatically added to the scan directory list.
-- **Wikipedia Lookup** — fetches a thumbnail image and article summary for any catalog object directly from Wikipedia, displayed alongside the object stats in the Planner.
+- **Wikipedia Lookup** — fetches the Wikipedia lead-image thumbnail for any catalog object on demand and displays it alongside the object stats in the Planner (the article extract is also retrieved but not yet shown).
 - **FITS Image Viewer** — display and inspect individual FITS images with zoom, pan, asinh stretch, denoising, image rejection workflow, and a scrollable thumbnail strip of every image viewed this session. Also opens `.jpg` / `.jpeg` preview files (stretch and denoise controls are hidden; rejection workflow not applicable).
 - **Catalog Breakdown** — organises your imaging history by catalog (Messier, NGC, IC, Caldwell, Sharpless, Barnard, LDN, LBN, Abell, PGC, UGC, and more).
-- **Observed Sky Paths** — below the Catalog Breakdown, a sky-arc chart (the same altitude-vs-time view as the planner's Sky Arc) plots every observed target's altitude across tonight from its FITS RA/Dec, each target in its own colour, with twilight shading, altitude grid, and an hourly time axis. Click a target to highlight it and grey the rest.
+- **Observed Sky Paths** — below the Catalog Breakdown, an altitude-vs-time sky-arc chart plots every observed target's altitude across tonight from its FITS RA/Dec, each target in its own colour, with twilight shading, altitude grid, and an hourly time axis. Click a target to highlight it and grey the rest.
 - **File Organiser** — batch tools for organising stacked files, scanning/deleting JPG previews, preparing Siril folder structures, and removing empty directories — all operating across all scan directories simultaneously.
 - **Native system theme** — automatically matches your KDE Plasma or GTK desktop. Wayland native rendering is supported.
 
@@ -157,11 +157,11 @@ Plans tonight's session or any future night from your location:
 - Configurable minimum altitude horizon limit
 - Supports Seestar S50 mode to filter to objects within the smart telescope's capabilities
 - Night offset slider to plan sessions days ahead
-- **Sky Arc** — selecting an object draws its altitude curve across a fixed 12-hour night window (18:00–06:00 local time, centred on the observing location's local midnight), with twilight shading (astronomical / nautical / civil), rise/set and transit times with compass bearings, a compass strip showing the object's direction through the night, meridian crossing line with peak altitude, and a 15° planning limit marker
-- **Detailed Sky View** — a **Detailed View** button opens a full 360° interactive sky dome (KStars-style) in its own window: live object positions for your location, an imaging-history overlay sizing imaged targets by integration time, horizon/altitude/azimuth grids with cardinal and meridian reference, pan/zoom, and click-to-select objects mirrored two-way with the planner
+- **Sky Arc** — selecting an object shows a **horizontally-locked sky dome**: the same focus-centred azimuthal-equidistant projection as the Detailed View, confined to the panel and locked to look at the horizon. Drag left/right to rotate around the horizon and scroll to zoom (zoom stretches the view horizontally and subdivides the azimuth grid, showing degree marks between the cardinal directions). It draws only the skybox degree lines (altitude rings, azimuth spokes, horizon, cardinal/degree labels — no star field), the object's above-horizon path as a curve, a transit dot (peak altitude + time), and sunset/sunrise position markers
+- **Detailed Sky View** — a **Detailed View** button (or **Tools → Detailed Sky View… `Ctrl+Shift+P`** on the main window) opens a full 360° interactive sky dome (KStars-style) in its own window: live object positions for your location, an imaging-history overlay sizing imaged targets by integration time, horizon/altitude/azimuth grids with cardinal and meridian reference, pan/zoom, and click-to-select objects mirrored two-way with the planner. It opens looking at the horizon in your enabled viewable-area directions (due north when all are enabled), with the level horizon resting in the bottom third of the window, and the dome resizes with the window.
 - **UTC / AM-PM toggle** — switch every time in the planner (Observable Objects list, sky-arc axis and labels, recommended observation) between 24-hour UTC and the observing location's local 12-hour AM/PM clock
-- **Viewable area** — narrow the Sky Arc to the sky you can actually see by toggling the compass directions visible from your site (N/NE/E/SE/S/SW/W/NW, independently — so non-contiguous views and a fully blocked west are fine) plus a minimum-altitude floor; in-view portions of the arc are highlighted and out-of-view portions dimmed. Tick **Show only objects in my sky** to filter the Observable Objects list down to just the targets that actually rise into those directions tonight
-- **Planner calendar** — a month / 7-day / 3-day **View** selector (matching the Imaging Calendar) with moon phase and weather (cloud, temperature, humidity) per night and scheduled targets as pills. In Normal/Detailed views, click a target to load it in the detail panel
+- **Viewable area** — toggle the compass directions visible from your site (N/NE/E/SE/S/SW/W/NW, independently — so non-contiguous views and a fully blocked west are fine) plus a minimum-altitude floor; this drives the Detailed View dome and, via **Show only objects in my sky**, filters the Observable Objects list down to just the targets that actually rise into those directions tonight (re-wiring it into the redesigned panorama Sky Arc is a pending follow-up)
+- **Planner calendar** — a month / 7-day / 3-day **View** selector (matching the Imaging Calendar) with moon phase and **overnight** weather per night (cloud, temperature, humidity, plus wind speed/direction and sunset/sunrise times in the Normal/Detailed views), and scheduled targets as pills. All weather is averaged over the 20:00–06:00 observing window rather than the whole day. In Normal/Detailed views, click a target to load it in the detail panel
 - **Session time-blocking** — in the Detailed (3-day) view, each night's lower third is a horizontal 18:00–06:00 timeline; with an object selected, drag across it to block out an observing slot (15-minute snapping, click a bar to remove). Blocks persist via QSettings
 
 ---
@@ -189,6 +189,8 @@ Pre-built AppImages for Linux are available on the [Releases page](https://githu
 | Platform | Download |
 |---|---|
 | Linux x86-64 | [Meridian-x86_64.AppImage Version: 1.0.2a](https://github.com/sodacycle/Meridian/releases/download/1.0.2a/Meridian-x86_64.AppImage) |
+
+> **Dev vs. Release builds** — the **Dev** build (latest `master`) always contains the most recent changes and newest features, but may be in flux. **Release** builds (tagged on the Releases page) are more stable and feature-complete. Choose a Release build for everyday use; use the Dev build to try the latest work in progress.
 
 Download, make executable, and run — no Qt installation required:
 
@@ -303,7 +305,7 @@ Meridian/
 │   ├── locationservice.*   GPS + IP geolocation
 │   ├── weatherservice.*    Open-Meteo weather fetcher
 │   ├── lightpollutionservice.* Bortle/SQM lookup
-│   ├── wikiservice.*       Wikipedia infobox fetcher
+│   ├── wikiservice.*       Wikipedia thumbnail + article-extract fetcher
 │   └── seestarservice.*    Seestar S50 USB mount detector
 ├── qml/                    QML/UI layer
 │   ├── main.qml
@@ -339,7 +341,7 @@ Meridian/
 - **Async operations** — all batch operations (scanning, organising, deleting) run asynchronously with real-time progress feedback. The UI stays responsive throughout.
 - **Moon phase** — calculated locally for each calendar date without any external API.
 - **Weather** — fetched from [Open-Meteo](https://open-meteo.com/) using coordinates from your FITS headers. No API key required.
-- **Wikipedia** — object infobox data is fetched and parsed on demand. No API key required.
+- **Wikipedia** — the lead-image thumbnail and article extract are fetched on demand via `pageimages|extracts`. No API key required.
 - **Safe deletion** — all file deletion operations require explicit confirmation before proceeding.
 - **Helpful tooltips** — hover over buttons and controls for contextual hints.
 

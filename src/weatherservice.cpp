@@ -56,8 +56,8 @@ void WeatherService::fetchWeatherForDateRange(const QString &startDate, const QS
         QUrlQuery query;
         query.addQueryItem("latitude",   QString::number(m_latitude));
         query.addQueryItem("longitude",  QString::number(m_longitude));
-        query.addQueryItem("hourly",     "cloud_cover,relative_humidity_2m,temperature_2m");
-        query.addQueryItem("daily",      "weather_code");
+        query.addQueryItem("hourly",     "cloud_cover,relative_humidity_2m,temperature_2m,wind_speed_10m,wind_direction_10m");
+        query.addQueryItem("daily",      "weather_code,sunrise,sunset");
         query.addQueryItem("start_date", start.toString("yyyy-MM-dd"));
         query.addQueryItem("end_date",   histEnd.toString("yyyy-MM-dd"));
         query.addQueryItem("timezone",   "auto");
@@ -78,8 +78,8 @@ void WeatherService::fetchWeatherForDateRange(const QString &startDate, const QS
     QUrlQuery forecastQuery;
     forecastQuery.addQueryItem("latitude",      QString::number(m_latitude));
     forecastQuery.addQueryItem("longitude",     QString::number(m_longitude));
-    forecastQuery.addQueryItem("hourly",        "cloud_cover,relative_humidity_2m,temperature_2m");
-    forecastQuery.addQueryItem("daily",         "weather_code");
+    forecastQuery.addQueryItem("hourly",        "cloud_cover,relative_humidity_2m,temperature_2m,wind_speed_10m,wind_direction_10m");
+    forecastQuery.addQueryItem("daily",         "weather_code,sunrise,sunset");
     forecastQuery.addQueryItem("timezone",      "auto");
     forecastQuery.addQueryItem("forecast_days", "16");
     forecastUrl.setQuery(forecastQuery);
@@ -112,8 +112,8 @@ void WeatherService::fetchWeather(int year, int month)
         QUrlQuery query;
         query.addQueryItem("latitude", QString::number(m_latitude));
         query.addQueryItem("longitude", QString::number(m_longitude));
-        query.addQueryItem("hourly", "cloud_cover,relative_humidity_2m,temperature_2m");
-        query.addQueryItem("daily", "weather_code");
+        query.addQueryItem("hourly", "cloud_cover,relative_humidity_2m,temperature_2m,wind_speed_10m,wind_direction_10m");
+        query.addQueryItem("daily", "weather_code,sunrise,sunset");
         query.addQueryItem("start_date", firstOfMonth.toString("yyyy-MM-dd"));
         query.addQueryItem("end_date", endDate.toString("yyyy-MM-dd"));
         query.addQueryItem("timezone", "auto");
@@ -133,8 +133,8 @@ void WeatherService::fetchWeather(int year, int month)
     QUrlQuery forecastQuery;
     forecastQuery.addQueryItem("latitude",      QString::number(m_latitude));
     forecastQuery.addQueryItem("longitude",     QString::number(m_longitude));
-    forecastQuery.addQueryItem("hourly",        "cloud_cover,relative_humidity_2m,temperature_2m");
-    forecastQuery.addQueryItem("daily",         "weather_code");
+    forecastQuery.addQueryItem("hourly",        "cloud_cover,relative_humidity_2m,temperature_2m,wind_speed_10m,wind_direction_10m");
+    forecastQuery.addQueryItem("daily",         "weather_code,sunrise,sunset");
     forecastQuery.addQueryItem("timezone",      "auto");
     forecastQuery.addQueryItem("forecast_days", "16");
     forecastUrl.setQuery(forecastQuery);
@@ -152,14 +152,22 @@ void WeatherService::fetchWeather(int year, int month)
 
 void WeatherService::parseWeatherResponse(const QJsonObject &data)
 {
+    static const double kPi = 3.14159265358979323846;
+
     QJsonObject daily = data["daily"].toObject();
     QJsonArray times = daily["time"].toArray();
     QJsonArray codes = daily["weather_code"].toArray();
+    QJsonArray sunrises = daily["sunrise"].toArray();
+    QJsonArray sunsets  = daily["sunset"].toArray();
 
     for (int i = 0; i < times.size() && i < codes.size(); i++) {
         QString date = times[i].toString();
-        WeatherData wd;
+        WeatherData wd = m_weatherCache.value(date);
         wd.weatherCode = codes[i].toInt();
+        if (i < sunrises.size() && !sunrises[i].isNull())
+            wd.sunrise = sunrises[i].toString().mid(11, 5);
+        if (i < sunsets.size() && !sunsets[i].isNull())
+            wd.sunset = sunsets[i].toString().mid(11, 5);
         wd.valid = true;
         m_weatherCache[date] = wd;
     }
@@ -169,52 +177,56 @@ void WeatherService::parseWeatherResponse(const QJsonObject &data)
     QJsonArray clouds = hourly["cloud_cover"].toArray();
     QJsonArray humidity = hourly["relative_humidity_2m"].toArray();
     QJsonArray temps = hourly["temperature_2m"].toArray();
+    QJsonArray windSpeeds = hourly["wind_speed_10m"].toArray();
+    QJsonArray windDirs = hourly["wind_direction_10m"].toArray();
 
-    QMap<QString, QVector<double>> dailyClouds, dailyHumidity, nightlyTemps;
+    // Overnight only (20:00–06:00): exclude daytime so the planning data reflects observing hours.
+    QMap<QString, QVector<double>> nightClouds, nightHumidity, nightTemps, nightWind;
+    QMap<QString, double> windSin, windCos;
+    QMap<QString, int> windN;
 
     for (int i = 0; i < hTimes.size(); i++) {
         QString dt = hTimes[i].toString();
         QString day = dt.left(10);
         int hour = dt.mid(11, 2).toInt();
-
-        if (hour >= 20 || hour < 6) {
-            if (i < temps.size() && !temps[i].isNull())
-                nightlyTemps[day].append(temps[i].toDouble());
-        }
+        if (!(hour >= 20 || hour < 6)) continue;
 
         if (i < clouds.size() && !clouds[i].isNull())
-            dailyClouds[day].append(clouds[i].toDouble());
+            nightClouds[day].append(clouds[i].toDouble());
         if (i < humidity.size() && !humidity[i].isNull())
-            dailyHumidity[day].append(humidity[i].toDouble());
-    }
-
-    for (auto it = dailyClouds.begin(); it != dailyClouds.end(); ++it) {
-        WeatherData &wd = m_weatherCache[it.key()];
-        const auto &vals = it.value();
-        if (!vals.isEmpty()) {
-            double sum = 0;
-            for (double v : vals) sum += v;
-            wd.avgCloud = sum / vals.size();
+            nightHumidity[day].append(humidity[i].toDouble());
+        if (i < temps.size() && !temps[i].isNull())
+            nightTemps[day].append(temps[i].toDouble());
+        if (i < windSpeeds.size() && !windSpeeds[i].isNull())
+            nightWind[day].append(windSpeeds[i].toDouble());
+        if (i < windDirs.size() && !windDirs[i].isNull()) {
+            double r = windDirs[i].toDouble() * kPi / 180.0;
+            windSin[day] += std::sin(r);
+            windCos[day] += std::cos(r);
+            windN[day] += 1;
         }
     }
 
-    for (auto it = dailyHumidity.begin(); it != dailyHumidity.end(); ++it) {
-        WeatherData &wd = m_weatherCache[it.key()];
-        const auto &vals = it.value();
-        if (!vals.isEmpty()) {
-            double sum = 0;
-            for (double v : vals) sum += v;
-            wd.avgHumidity = sum / vals.size();
-        }
-    }
+    auto mean = [](const QVector<double> &v) {
+        double s = 0;
+        for (double x : v) s += x;
+        return v.isEmpty() ? 0.0 : s / v.size();
+    };
 
-    for (auto it = nightlyTemps.begin(); it != nightlyTemps.end(); ++it) {
-        WeatherData &wd = m_weatherCache[it.key()];
-        const auto &vals = it.value();
-        if (!vals.isEmpty()) {
-            double sum = 0;
-            for (double v : vals) sum += v;
-            wd.nightTemp = sum / vals.size();
+    for (auto it = nightClouds.begin(); it != nightClouds.end(); ++it)
+        if (!it.value().isEmpty()) m_weatherCache[it.key()].avgCloud = mean(it.value());
+    for (auto it = nightHumidity.begin(); it != nightHumidity.end(); ++it)
+        if (!it.value().isEmpty()) m_weatherCache[it.key()].avgHumidity = mean(it.value());
+    for (auto it = nightTemps.begin(); it != nightTemps.end(); ++it)
+        if (!it.value().isEmpty()) m_weatherCache[it.key()].nightTemp = mean(it.value());
+    for (auto it = nightWind.begin(); it != nightWind.end(); ++it)
+        if (!it.value().isEmpty()) m_weatherCache[it.key()].windSpeed = mean(it.value());
+    for (auto it = windN.begin(); it != windN.end(); ++it) {
+        if (it.value() > 0) {
+            double a = std::atan2(windSin[it.key()] / it.value(),
+                                  windCos[it.key()] / it.value()) * 180.0 / kPi;
+            if (a < 0) a += 360.0;
+            m_weatherCache[it.key()].windDir = a;
         }
     }
 }

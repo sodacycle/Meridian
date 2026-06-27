@@ -3,7 +3,8 @@ import QtQuick.Controls
 
 Rectangle {
     id: root
-    height: col.height + 32
+    implicitHeight: col.height + 32
+    height: implicitHeight
     color:        window.sysPal.base
     border.color: window.sysPal.mid
     border.width: 1

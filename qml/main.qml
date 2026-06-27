@@ -17,15 +17,24 @@ ApplicationWindow {
     property bool   scanCompleted:     false
 
     property string seestarAutoAddedPath: ""
+    property bool   showObservedSkyPaths:  true
 
     menuBar: MenuBar {
 
+        component TipMenuItem: MenuItem {
+            ToolTip.visible: hovered && ToolTip.text.length > 0
+            ToolTip.delay: 500
+            ToolTip.text: (action && action.tip !== undefined) ? action.tip : ""
+        }
+
         Menu {
             title: "&File"
+            delegate: TipMenuItem {}
 
             Action {
                 text: "Add Folder…"
                 shortcut: "Ctrl+O"
+                property string tip: "Add a folder to the scan list. Subdirectories are scanned automatically."
                 onTriggered: {
                     var dir = scanner.selectDirectory()
                     if (dir !== "")
@@ -35,6 +44,7 @@ ApplicationWindow {
             Action {
                 text: "Scan FITS Files"
                 shortcut: "Ctrl+Shift+S"
+                property string tip: "Scan all added folders for FITS files and build the metadata summaries."
                 enabled: scanner.directories.length > 0 && !scanner.running && !organizer.running
                 onTriggered: {
                     controlsPanel.setStatus("")
@@ -45,6 +55,7 @@ ApplicationWindow {
             Action {
                 text: "Stop"
                 shortcut: "Ctrl+."
+                property string tip: "Cancel the current scan or file operation, keeping any results so far."
                 enabled: scanner.running || organizer.running
                 onTriggered: { scanner.cancel(); organizer.cancel() }
             }
@@ -52,16 +63,19 @@ ApplicationWindow {
             Action {
                 text: "Exit"
                 shortcut: "Ctrl+Q"
+                property string tip: "Close Meridian."
                 onTriggered: Qt.quit()
             }
         }
 
         Menu {
             title: "&Tools"
+            delegate: TipMenuItem {}
 
             Action {
                 text: "Open Planner…"
                 shortcut: "Ctrl+P"
+                property string tip: "Open the Observation Planner for tonight's visible objects."
                 onTriggered: {
                     plannerWindow.latitude  = weatherService.latitude
                     plannerWindow.longitude = weatherService.longitude
@@ -69,17 +83,29 @@ ApplicationWindow {
                     plannerWindow.raise()
                 }
             }
+            Action {
+                text: "Detailed Sky View…"
+                shortcut: "Ctrl+Shift+P"
+                property string tip: "Open the full 360° interactive sky dome in its own window."
+                onTriggered: {
+                    plannerWindow.latitude  = weatherService.latitude
+                    plannerWindow.longitude = weatherService.longitude
+                    plannerWindow.openSkyArcDetailed()
+                }
+            }
 
             MenuSeparator {}
 
             Menu {
                 title: "Advanced Tools"
+                delegate: TipMenuItem {}
 
                 Action {
                     id: advancedToolsAction
                     text: "Show Advanced Tools Panel"
                     checkable: true
                     checked: false
+                    property string tip: "Show or hide the batch file-operation panel."
                     onTriggered: controlsPanel.advancedVisible = checked
                 }
                 Connections {
@@ -93,6 +119,7 @@ ApplicationWindow {
 
                 Action {
                     text: "Organize Stacked Files"
+                    property string tip: "Move stacked/master files into a tidy per-target folder structure."
                     enabled: scanner.directories.length > 0 && !scanner.running && !organizer.running
                     onTriggered: {
                         controlsPanel.advancedVisible = true
@@ -102,6 +129,7 @@ ApplicationWindow {
                 }
                 Action {
                     text: "Siril Prep"
+                    property string tip: "Group light/dark/flat/bias frames into the folder layout Siril expects."
                     enabled: scanner.directories.length > 0 && !scanner.running && !organizer.running
                     onTriggered: {
                         controlsPanel.advancedVisible = true
@@ -111,6 +139,7 @@ ApplicationWindow {
                 }
                 Action {
                     text: "Remove Empty Folders"
+                    property string tip: "Delete empty subfolders left behind after organising."
                     enabled: scanner.directories.length > 0 && !scanner.running && !organizer.running
                     onTriggered: {
                         controlsPanel.advancedVisible = true
@@ -123,9 +152,11 @@ ApplicationWindow {
 
                 Menu {
                     title: "Scan for JPG Files"
+                    delegate: TipMenuItem {}
 
                     Action {
                         text: "Scan for JPG Files"
+                        property string tip: "Find JPG files in the scanned folders so they can be reviewed or removed."
                         enabled: scanner.directories.length > 0 && !scanner.running && !organizer.running
                         onTriggered: {
                             controlsPanel.advancedVisible = true
@@ -136,11 +167,13 @@ ApplicationWindow {
                     MenuSeparator {}
                     Action {
                         text: "Delete JPG Files…"
+                        property string tip: "Delete the JPG files found by the last scan."
                         enabled: controlsPanel.jpgScanDone && !organizer.running
                         onTriggered: menuDeleteJpgDialog.open()
                     }
                     Action {
                         text: "Clear JPG Results"
+                        property string tip: "Discard the JPG scan results without deleting any files."
                         enabled: controlsPanel.jpgScanDone && !organizer.running
                         onTriggered: controlsPanel.clearJpgData()
                     }
@@ -150,19 +183,65 @@ ApplicationWindow {
 
         Menu {
             title: "&View"
+            delegate: TipMenuItem {}
+
+            Menu {
+                title: "Imaging Calendar View"
+                delegate: TipMenuItem {}
+
+                ActionGroup { id: calendarViewGroup }
+
+                Action {
+                    text: "Compact (Month)"
+                    checkable: true
+                    ActionGroup.group: calendarViewGroup
+                    property string tip: "Show the calendar as a full month grid."
+                    checked: imagingCalendar.density === "Compact"
+                    onTriggered: imagingCalendar.density = "Compact"
+                }
+                Action {
+                    text: "Normal (7-Day)"
+                    checkable: true
+                    ActionGroup.group: calendarViewGroup
+                    property string tip: "Show one week with more detail per night."
+                    checked: imagingCalendar.density === "Normal"
+                    onTriggered: imagingCalendar.density = "Normal"
+                }
+                Action {
+                    text: "Detailed (3-Day)"
+                    checkable: true
+                    ActionGroup.group: calendarViewGroup
+                    property string tip: "Show three days with the most detail per night."
+                    checked: imagingCalendar.density === "Detailed"
+                    onTriggered: imagingCalendar.density = "Detailed"
+                }
+            }
+
+            Action {
+                text: "Show Observed Sky Paths"
+                checkable: true
+                property string tip: "Show or hide the sky-arc panel under the Catalog Breakdown."
+                checked: window.showObservedSkyPaths
+                onTriggered: window.showObservedSkyPaths = checked
+            }
+
+            MenuSeparator {}
 
             Action {
                 text: "Open in Viewer"
+                property string tip: "Open the selected FITS file in the Image Viewer."
                 enabled: fileDetailsView.selectedFilePath !== ""
                 onTriggered: viewerManager.openFile(fileDetailsView.selectedFilePath)
             }
             Action {
                 text: "Reject Selected File"
+                property string tip: "Move the selected file to the rejected folder."
                 enabled: fileDetailsView.selectedFilePath !== ""
                 onTriggered: menuRejectFileDialog.open()
             }
             Action {
                 text: "Delete Selected File…"
+                property string tip: "Permanently delete the selected file from disk."
                 enabled: fileDetailsView.selectedFilePath !== ""
                 onTriggered: menuDeleteFileDialog.open()
             }
@@ -170,9 +249,11 @@ ApplicationWindow {
 
         Menu {
             title: "&Help"
+            delegate: TipMenuItem {}
 
             Action {
                 text: "About Meridian…"
+                property string tip: "Show version and project information."
                 onTriggered: aboutDialog.open()
             }
         }
@@ -424,10 +505,12 @@ ApplicationWindow {
                 ObservedSkyDome {
                     id: observedSkyDome
                     anchors.top:        catalogBreakdown.bottom
-                    anchors.topMargin:  8
+                    anchors.topMargin:  visible ? 8 : 0
                     anchors.left:       targetSummaryView.right
                     anchors.leftMargin: 2
                     anchors.right:      parent.right
+                    visible: window.showObservedSkyPaths
+                    height:  visible ? implicitHeight : 0
                     metadataList: window.fullMetadataList
                 }
             }

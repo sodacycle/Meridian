@@ -8,20 +8,29 @@
 #include <QHash>
 #include <QDateTime>
 #include <QSettings>
+#include <QString>
 
 struct WeatherData {
     Q_GADGET
-    Q_PROPERTY(bool   valid        MEMBER valid)
-    Q_PROPERTY(int    weatherCode  MEMBER weatherCode)
-    Q_PROPERTY(double avgCloud     MEMBER avgCloud)
-    Q_PROPERTY(double avgHumidity  MEMBER avgHumidity)
-    Q_PROPERTY(double nightTemp    MEMBER nightTemp)
+    Q_PROPERTY(bool    valid        MEMBER valid)
+    Q_PROPERTY(int     weatherCode  MEMBER weatherCode)
+    Q_PROPERTY(double  avgCloud     MEMBER avgCloud)
+    Q_PROPERTY(double  avgHumidity  MEMBER avgHumidity)
+    Q_PROPERTY(double  nightTemp    MEMBER nightTemp)
+    Q_PROPERTY(double  windSpeed    MEMBER windSpeed)
+    Q_PROPERTY(double  windDir      MEMBER windDir)
+    Q_PROPERTY(QString sunrise      MEMBER sunrise)
+    Q_PROPERTY(QString sunset       MEMBER sunset)
 public:
-    int    weatherCode  = 0;
-    double avgCloud     = 0;
-    double avgHumidity  = 0;
-    double nightTemp    = 0;
-    bool   valid        = false;
+    int     weatherCode  = 0;
+    double  avgCloud     = 0;
+    double  avgHumidity  = 0;
+    double  nightTemp    = 0;
+    double  windSpeed    = 0;
+    double  windDir      = 0;
+    QString sunrise;
+    QString sunset;
+    bool    valid        = false;
 };
 Q_DECLARE_METATYPE(WeatherData)
 

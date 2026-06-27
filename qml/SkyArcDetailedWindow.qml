@@ -121,15 +121,30 @@ Window {
             anchors { right: parent.right; rightMargin: 16; verticalCenter: parent.verticalCenter }
             spacing: 6
             Button { text: "Zoom In"; flat: true; implicitHeight: 28
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Magnify the sky around the current centre.\nYou can also scroll the wheel over the dome."
                 onClicked: skyArcDetailedWindow.zoom = Math.min(8.0, skyArcDetailedWindow.zoom * 1.2) }
             Button { text: "Zoom Out"; flat: true; implicitHeight: 28
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Widen the field of view to show more sky."
                 onClicked: skyArcDetailedWindow.zoom = Math.max(0.5, skyArcDetailedWindow.zoom / 1.2) }
             Button { text: "Reset View"; flat: true; implicitHeight: 28
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Return to the zenith-centred whole-sky view at 1× zoom."
                 onClicked: skyArcDetailedWindow.resetView() }
             Button { text: "Grid"; flat: true; implicitHeight: 28; checkable: true
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Show or hide the horizon, altitude rings,\nand azimuth spokes."
                 checked: skyArcDetailedWindow.showGrid
                 onToggled: skyArcDetailedWindow.showGrid = checked }
             Button { text: "Labels"; flat: true; implicitHeight: 28; checkable: true
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Show or hide cardinal-direction and object labels."
                 checked: skyArcDetailedWindow.showLabels
                 onToggled: skyArcDetailedWindow.showLabels = checked }
         }
@@ -199,7 +214,9 @@ Window {
                 var DEG = Math.PI / 180, RAD = 180 / Math.PI
                 var lat = skyArcDetailedWindow.latitude
                 var lon = skyArcDetailedWindow.longitude
-                var cx = width / 2, cy = height / 2
+                var altFrac = Math.max(0, Math.min(1, skyArcDetailedWindow.focusAltDeg / 90))
+                var cx = width / 2
+                var cy = height * (0.5 + (1 - altFrac) * (1 / 6))
                 var scale = domeCanvas.scaleFactor
                 var cMax = 1.74
 
