@@ -190,7 +190,7 @@ Pre-built AppImages for Linux are available on the [Releases page](https://githu
 
 | Platform | Download |
 |---|---|
-| Linux x86-64 | [Meridian-x86_64.AppImage Version: 1.0.2a](https://github.com/sodacycle/Meridian/releases/download/1.0.2a/Meridian-x86_64.AppImage) |
+| Linux x86-64 | [Meridian-x86_64.AppImage Version: 1.0.2a](https://github.com/sodacycle/Meridian/releases/download/1.0.3a/Meridian-x86_64.AppImage) |
 
 > **Dev vs. Release builds** — the **Dev** build (latest `master`) always contains the most recent changes and newest features, but may be in flux. **Release** builds (tagged on the Releases page) are more stable and feature-complete. Choose a Release build for everyday use; use the Dev build to try the latest work in progress.
 
