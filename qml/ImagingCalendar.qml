@@ -69,7 +69,7 @@ Rectangle {
         buildCalendar(window.fullMetadataList)
     }
 
-    onDensityChanged: buildCalendar(window.fullMetadataList)
+    onDensityChanged: Qt.callLater(buildCalendar, window.fullMetadataList)
 
     function matchesCatalog(targetName, catalog) {
         if (catalog === "") return true

@@ -180,7 +180,6 @@ void WeatherService::parseWeatherResponse(const QJsonObject &data)
     QJsonArray windSpeeds = hourly["wind_speed_10m"].toArray();
     QJsonArray windDirs = hourly["wind_direction_10m"].toArray();
 
-    // Overnight only (20:00–06:00): exclude daytime so the planning data reflects observing hours.
     QMap<QString, QVector<double>> nightClouds, nightHumidity, nightTemps, nightWind;
     QMap<QString, double> windSin, windCos;
     QMap<QString, int> windN;

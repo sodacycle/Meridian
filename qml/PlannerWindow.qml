@@ -113,9 +113,6 @@ Window {
     }
 
     function openSkyArcDetailed() {
-        skyArcDetailedWindow.latitude    = plannerWindow.latitude
-        skyArcDetailedWindow.longitude   = plannerWindow.longitude
-        skyArcDetailedWindow.nightOffset = plannerWindow.nightOffset
         skyArcDetailedWindow.focusAltDeg = 0
         skyArcDetailedWindow.focusAzDeg  = detailedStartAz()
         skyArcDetailedWindow.show()
@@ -149,8 +146,8 @@ Window {
         var lonOffMs = (longitude / 15.0) * 3600000
         var localNow = Date.now() + lonOffMs
         var dayMs    = 86400000
-        return new Date(Math.floor(localNow / dayMs) * dayMs
-                        - lonOffMs + nightOffset * dayMs)
+        var midnightLocal = Math.floor((localNow - dayMs / 2) / dayMs) * dayMs + dayMs
+        return new Date(midnightLocal - lonOffMs + nightOffset * dayMs)
     }
 
     function nightLabel() {
@@ -621,22 +618,8 @@ Window {
 
             Item {
                 id: pageContent
-                // Reserve the scrollbar's width so it never overlays the content.
                 width: pageFlick.width - pageScroll.width
                 height: topSection.height + obsBar.height + calSection.height
-
-                WheelHandler {
-                    enabled: skyArcHover.hovered
-                    onWheel: function(e) {
-                        if (e.angleDelta.y !== 0) {
-                            var f = e.angleDelta.y > 0 ? 1.15 : 0.87
-                            skyCanvas.zoom = Math.max(1.0, Math.min(12.0, skyCanvas.zoom * f))
-                        } else if (e.angleDelta.x !== 0) {
-                            skyCanvas.focusAz = skyCanvas.focusAz + (e.angleDelta.x > 0 ? 6 : -6)
-                            skyCanvas.clampFocusAz()
-                        }
-                    }
-                }
 
         Rectangle {
             id: obsBar
@@ -1688,34 +1671,32 @@ Window {
                         onZoomChanged:       Qt.callLater(requestPaint)
                         onViewSectorsChanged: { clampFocusAz(); Qt.callLater(requestPaint) }
 
-                        // Selected viewable-area band as { center, span } in degrees, or null when
-                        // all (or no) directions are enabled (free 360° panning).
                         function azBand() {
                             var sel = []
                             for (var i = 0; i < 8; i++) if (viewSectors[i] === true) sel.push(i * 45)
                             if (sel.length === 0 || sel.length === 8) return null
                             sel.sort(function(a, b) { return a - b })
-                            var maxGap = -1, gapAt = 0
+                            var maxGap = -1, gapStartIdx = 0
                             for (var k = 0; k < sel.length; k++) {
                                 var next = (k + 1 < sel.length) ? sel[k + 1] : sel[0] + 360
                                 var gap = next - sel[k]
-                                if (gap > maxGap) { maxGap = gap; gapAt = k }
+                                if (gap > maxGap) { maxGap = gap; gapStartIdx = k }
                             }
-                            var startAz = sel[(gapAt + 1) % sel.length]
-                            var spanCenters = 360 - maxGap
-                            return { center: startAz + spanCenters / 2, span: spanCenters + 45 }
+                            var startAz = sel[(gapStartIdx + 1) % sel.length]
+                            var arcBetweenEnds = 360 - maxGap
+                            return { center: startAz + arcBetweenEnds / 2, span: arcBetweenEnds + 45 }
                         }
 
                         function clampFocusAz() {
                             var band = azBand()
                             if (!band) { focusAz = ((focusAz % 360) + 360) % 360; return }
-                            var half = (width / 2) / projScale * 180 / Math.PI
+                            var halfViewDeg = (width / 2) / projScale * 180 / Math.PI
                             var d = focusAz - band.center
                             while (d >  180) d -= 360
                             while (d < -180) d += 360
                             var fa = band.center + d
-                            var lo = band.center - band.span / 2 + half
-                            var hi = band.center + band.span / 2 - half
+                            var lo = band.center - band.span / 2 + halfViewDeg
+                            var hi = band.center + band.span / 2 - halfViewDeg
                             if (lo > hi) fa = band.center
                             else if (fa < lo) fa = lo
                             else if (fa > hi) fa = hi
@@ -1944,6 +1925,16 @@ Window {
                                 skyCanvas.focusAz = skyCanvas.focusAz - dDeg
                                 skyCanvas.clampFocusAz()
                                 lastX = m.x
+                            }
+                            onWheel: function(wheel) {
+                                if (wheel.angleDelta.y !== 0) {
+                                    var f = wheel.angleDelta.y > 0 ? 1.15 : 0.87
+                                    skyCanvas.zoom = Math.max(1.0, Math.min(12.0, skyCanvas.zoom * f))
+                                } else if (wheel.angleDelta.x !== 0) {
+                                    skyCanvas.focusAz = skyCanvas.focusAz + (wheel.angleDelta.x > 0 ? 6 : -6)
+                                    skyCanvas.clampFocusAz()
+                                }
+                                wheel.accepted = true
                             }
 
                             HoverHandler { id: skyArcHover }
@@ -2198,6 +2189,9 @@ Window {
     SkyArcDetailedWindow {
         id: skyArcDetailedWindow
         visible: false
+        latitude:    plannerWindow.latitude
+        longitude:   plannerWindow.longitude
+        nightOffset: plannerWindow.nightOffset
         selectedName: plannerWindow.selectedObj ? plannerWindow.selectedObj.name : ""
         onObjectSelected: function(entry) { plannerWindow.selectedObj = entry }
     }

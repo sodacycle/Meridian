@@ -25,10 +25,19 @@ Window {
     property string selectedName: ""
 
     property double nowMs: Date.now()
+    property double displayMs: nowMs
+    property bool   displayLive: false
     property var objects: []
     property var stars: []
 
     signal objectSelected(var entry)
+
+    function nightLabel() {
+        if (nightOffset === 0) return "Tonight"
+        if (nightOffset === 1) return "Tomorrow"
+        var d = new Date(); d.setDate(d.getDate() + nightOffset)
+        return d.toLocaleDateString(Qt.locale(), "ddd d MMM")
+    }
 
     function resetView() {
         focusAltDeg = 90.0; focusAzDeg = 0.0; zoom = 1.0
@@ -79,6 +88,7 @@ Window {
     onVisibleChanged: if (visible) { nowMs = Date.now(); rebuildObjects(); loadStars() }
     onLatitudeChanged:  domeCanvas.requestPaint()
     onLongitudeChanged: domeCanvas.requestPaint()
+    onNightOffsetChanged: domeCanvas.requestPaint()
     onSelectedNameChanged: domeCanvas.requestPaint()
 
     Connections {
@@ -220,6 +230,53 @@ Window {
                 var scale = domeCanvas.scaleFactor
                 var cMax = 1.74
 
+                var pxPerDeg = scale * DEG
+                var tickStep = 45
+                if (skyArcDetailedWindow.zoom > 1.2) {
+                    var cand = [30, 15, 10, 5, 2, 1]
+                    for (var ti = 0; ti < cand.length; ti++)
+                        if (cand[ti] * pxPerDeg >= 34) tickStep = cand[ti]
+                }
+
+                var lonOffMs = (lon / 15.0) * 3600000
+                var dayMs = 86400000
+                var localNow = skyArcDetailedWindow.nowMs + lonOffMs
+                var midnightLocal = Math.floor((localNow - dayMs / 2) / dayMs) * dayMs + dayMs
+                var midnightMs = midnightLocal - lonOffMs + skyArcDetailedWindow.nightOffset * dayMs
+                var jdMid = plannerService.toJD(midnightMs)
+
+                function sunAlt(jd) {
+                    var T        = (jd - 2451545.0) / 36525.0
+                    var meanAnom = (357.52911 + 35999.05029 * T) * DEG
+                    var eclipLon = (280.46646 + 36000.76983 * T
+                                    + (1.914602 - 0.004817 * T) * Math.sin(meanAnom)
+                                    + 0.019993 * Math.sin(2 * meanAnom)) * DEG
+                    var obliq    = (23.439291 - 0.013004 * T) * DEG
+                    var raH = (Math.atan2(Math.cos(obliq) * Math.sin(eclipLon), Math.cos(eclipLon)) * RAD / 15 + 24) % 24
+                    var dec = Math.asin(Math.sin(obliq) * Math.sin(eclipLon)) * RAD
+                    return plannerService.altitudeDeg(raH, dec, lat, plannerService.lst(jd, lon))
+                }
+                var tSet = null, tRise = null
+                var prevSun = sunAlt(jdMid - 12 / 24.0)
+                for (var sh = -11.9; sh <= 12.0001; sh += 0.1) {
+                    var sAlt = sunAlt(jdMid + sh / 24.0)
+                    if (tSet === null && prevSun >= 0 && sAlt < 0) tSet = sh
+                    else if (tSet !== null && tRise === null && prevSun < 0 && sAlt >= 0) tRise = sh
+                    prevSun = sAlt
+                }
+                if (tSet === null) tSet = -6
+                if (tRise === null) tRise = 6
+
+                var tNow = (skyArcDetailedWindow.nowMs - midnightMs) / 3600000
+                var withinNight = (tNow >= tSet && tNow <= tRise)
+                var tShow = withinNight ? tNow : (tSet + tRise) / 2
+                var jdShow = jdMid + tShow / 24.0
+                skyArcDetailedWindow.displayMs = midnightMs + tShow * 3600000
+                skyArcDetailedWindow.displayLive = withinNight
+
+                var latRad = lat * DEG, sinLat = Math.sin(latRad), cosLat = Math.cos(latRad)
+                var lstDeg = plannerService.lst(jdShow, lon)
+
                 var alt0 = skyArcDetailedWindow.focusAltDeg * DEG
                 var az0  = skyArcDetailedWindow.focusAzDeg * DEG
                 var sinA0 = Math.sin(alt0), cosA0 = Math.cos(alt0)
@@ -248,20 +305,42 @@ Window {
                     ctx.stroke()
                 }
 
-                function drawPath(decDeg, strokeColor, lw) {
+                function drawPath(raHours, decDeg, strokeColor, lw) {
                     ctx.strokeStyle = strokeColor; ctx.lineWidth = lw; ctx.setLineDash([])
                     ctx.beginPath()
                     var drawing = false
-                    for (var ha = 0; ha <= 360; ha += 2) {
-                        var palt = plannerService.altitudeDeg(0, decDeg, lat, ha)
+                    var steps = 160
+                    for (var s = 0; s <= steps; s++) {
+                        var h = tSet + (tRise - tSet) * s / steps
+                        var lstH = plannerService.lst(jdMid + h / 24.0, lon)
+                        var palt = plannerService.altitudeDeg(raHours, decDeg, lat, lstH)
                         if (palt < 0) { drawing = false; continue }
-                        var paz = plannerService.azimuthDeg(0, decDeg, lat, ha)
+                        var paz = plannerService.azimuthDeg(raHours, decDeg, lat, lstH)
                         var pp = proj(palt, paz)
                         if (pp.c > cMax) { drawing = false; continue }
                         if (!drawing) { ctx.moveTo(pp.x, pp.y); drawing = true }
                         else ctx.lineTo(pp.x, pp.y)
                     }
                     ctx.stroke()
+                }
+
+                function eqProj(raDeg, decDeg) {
+                    var decRad = decDeg * DEG
+                    var haRad = (lstDeg - raDeg) * DEG
+                    var cosHa = Math.cos(haRad)
+                    var sinDec = Math.sin(decRad), cosDec = Math.cos(decRad)
+                    var sinAlt = Math.max(-1, Math.min(1, sinLat * sinDec + cosLat * cosDec * cosHa))
+                    var altDeg = Math.asin(sinAlt) * RAD
+                    var azDeg = Math.atan2(Math.sin(haRad), cosHa * sinLat - (sinDec / cosDec) * cosLat) * RAD + 180
+                    var r = proj(altDeg, azDeg)
+                    r.alt = altDeg
+                    return r
+                }
+
+                function eqLabel(txt, x, y) {
+                    ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.65)"
+                    ctx.strokeText(txt, x, y)
+                    ctx.fillText(txt, x, y)
                 }
 
                 if (skyArcDetailedWindow.showGrid) {
@@ -272,11 +351,13 @@ Window {
                         for (var ra = 0; ra <= 360; ra += 3) ring.push([ringAlt, ra])
                         strokeSky(ring)
                     }
-                    for (var spokeAz = 0; spokeAz < 360; spokeAz += 30) {
+                    for (var spokeAz = 0; spokeAz < 360; spokeAz += tickStep) {
                         var meridian = (spokeAz === 0 || spokeAz === 180)
+                        var cardSpoke = (spokeAz % 45 === 0)
                         ctx.setLineDash(meridian ? [] : [2, 4])
-                        ctx.lineWidth = meridian ? 1.0 : 0.5
-                        ctx.strokeStyle = meridian ? "rgba(255,255,255,0.22)" : "rgba(255,255,255,0.10)"
+                        ctx.lineWidth = meridian ? 1.0 : (cardSpoke ? 0.6 : 0.4)
+                        ctx.strokeStyle = meridian ? "rgba(255,255,255,0.22)"
+                                                   : (cardSpoke ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.07)")
                         var spoke = []
                         for (var sa2 = 0; sa2 <= 88; sa2 += 2) spoke.push([sa2, spokeAz])
                         strokeSky(spoke)
@@ -291,8 +372,6 @@ Window {
                 strokeSky(horizon)
 
                 if (!domeCanvas.interacting && skyArcDetailedWindow.stars.length > 0) {
-                    var latRad = lat * DEG, sinLat = Math.sin(latRad), cosLat = Math.cos(latRad)
-                    var lstDeg = plannerService.lst(plannerService.toJD(skyArcDetailedWindow.nowMs), lon)
                     ctx.fillStyle = "#ffffff"
                     for (var si = 0; si < skyArcDetailedWindow.stars.length; si++) {
                         var st = skyArcDetailedWindow.stars[si]
@@ -312,35 +391,102 @@ Window {
                     ctx.globalAlpha = 1.0
                 }
 
-                ctx.textAlign = "center"; ctx.textBaseline = "middle"
-                var compass = [["N", 0], ["E", 90], ["S", 180], ["W", 270],
-                               ["NE", 45], ["SE", 135], ["SW", 225], ["NW", 315]]
-                for (var ci = 0; ci < compass.length; ci++) {
-                    var cp = proj(0, compass[ci][1])
+                if (skyArcDetailedWindow.showGrid) {
+                    var decStep = 30, raStepDeg = 30
+                    if (skyArcDetailedWindow.zoom > 4)      { decStep = 10; raStepDeg = 15 }
+                    else if (skyArcDetailedWindow.zoom > 2) { decStep = 15; raStepDeg = 15 }
+                    var gridCol = "rgba(120,180,255,0.18)"
+                    var eqCol   = "rgba(120,180,255,0.40)"
+                    var labCol  = "rgba(160,205,255,0.90)"
+                    var mgn = 13
+                    ctx.font = "bold 10px sans-serif"; ctx.textBaseline = "middle"
+
+                    for (var dc = -60; dc <= 80; dc += decStep) {
+                        ctx.strokeStyle = (dc === 0) ? eqCol : gridCol
+                        ctx.lineWidth = (dc === 0) ? 1.0 : 0.6
+                        ctx.setLineDash((dc === 0) ? [] : [3, 4])
+                        ctx.beginPath()
+                        var drawing = false, lpt = null, rpt = null
+                        for (var ra = 0; ra <= 360; ra += 3) {
+                            var pp = eqProj(ra, dc)
+                            if (pp.c > cMax) { drawing = false; continue }
+                            if (!drawing) { ctx.moveTo(pp.x, pp.y); drawing = true } else ctx.lineTo(pp.x, pp.y)
+                            if (pp.alt >= 0 && pp.x >= 0 && pp.x <= width && pp.y >= 0 && pp.y <= height) {
+                                if (lpt === null || pp.x < lpt.x) lpt = pp
+                                if (rpt === null || pp.x > rpt.x) rpt = pp
+                            }
+                        }
+                        ctx.stroke()
+                        var decLbl = (dc > 0 ? "+" : "") + dc + "°"
+                        ctx.fillStyle = labCol
+                        if (lpt) { ctx.textAlign = "left";  eqLabel(decLbl, Math.max(mgn, lpt.x), lpt.y) }
+                        if (rpt && (!lpt || rpt.x - lpt.x > 40)) { ctx.textAlign = "right"; eqLabel(decLbl, Math.min(width - mgn, rpt.x), rpt.y) }
+                    }
+
+                    for (var raM = 0; raM < 360; raM += raStepDeg) {
+                        ctx.strokeStyle = gridCol; ctx.lineWidth = 0.6; ctx.setLineDash([3, 4])
+                        ctx.beginPath()
+                        var drw = false, tpt = null, bpt = null
+                        for (var dd = -60; dd <= 88; dd += 3) {
+                            var qp = eqProj(raM, dd)
+                            if (qp.c > cMax) { drw = false; continue }
+                            if (!drw) { ctx.moveTo(qp.x, qp.y); drw = true } else ctx.lineTo(qp.x, qp.y)
+                            if (qp.alt >= 0 && qp.x >= 0 && qp.x <= width && qp.y >= 0 && qp.y <= height) {
+                                if (tpt === null || qp.y < tpt.y) tpt = qp
+                                if (bpt === null || qp.y > bpt.y) bpt = qp
+                            }
+                        }
+                        ctx.stroke()
+                        var raLbl = (raM / 15) + "h"
+                        ctx.fillStyle = labCol; ctx.textAlign = "center"
+                        if (tpt) eqLabel(raLbl, tpt.x, Math.max(mgn, tpt.y))
+                        if (bpt && (!tpt || bpt.y - tpt.y > 28)) eqLabel(raLbl, bpt.x, Math.min(height - mgn, bpt.y))
+                    }
+                    ctx.setLineDash([]); ctx.textBaseline = "alphabetic"
+                }
+
+                ctx.textAlign = "center"; ctx.textBaseline = "bottom"
+                var cardNames = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+                for (var az = 0; az < 360; az += tickStep) {
+                    var cp = proj(0, az)
                     if (cp.c > cMax) continue
-                    var dxc = cp.x - cx, dyc = cp.y - cy
-                    var len = Math.max(1, Math.sqrt(dxc * dxc + dyc * dyc))
-                    var one = compass[ci][0].length === 1
-                    ctx.font = one ? "bold 14px sans-serif" : "11px sans-serif"
-                    ctx.fillStyle = one ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.55)"
-                    ctx.fillText(compass[ci][0], cp.x + dxc / len * 14, cp.y + dyc / len * 14)
+                    if (cp.x < 2 || cp.x > width - 2) continue
+                    var up = proj(2, az)
+                    var ux = up.x - cp.x, uy = up.y - cp.y
+                    var ul = Math.max(1, Math.sqrt(ux * ux + uy * uy))
+                    ux /= ul; uy /= ul
+                    var card = (az % 45 === 0)
+                    var tick = card ? 7 : 4
+                    ctx.setLineDash([])
+                    ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.lineWidth = card ? 1.2 : 0.6
+                    ctx.beginPath(); ctx.moveTo(cp.x, cp.y)
+                    ctx.lineTo(cp.x + ux * tick, cp.y + uy * tick); ctx.stroke()
+                    var lx = cp.x + ux * (tick + 2), ly = cp.y + uy * (tick + 2)
+                    if (card) {
+                        var nm = cardNames[Math.round(az / 45) % 8]
+                        ctx.font = (nm.length === 1) ? "bold 14px sans-serif" : "bold 11px sans-serif"
+                        ctx.fillStyle = (nm.length === 1) ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.70)"
+                        ctx.fillText(nm, lx, ly)
+                    } else {
+                        ctx.font = "bold 9px sans-serif"; ctx.fillStyle = "rgba(255,255,255,0.65)"
+                        ctx.fillText(az + "°", lx, ly)
+                    }
                 }
                 ctx.textBaseline = "alphabetic"
 
-                var nowJd = plannerService.toJD(skyArcDetailedWindow.nowMs)
-                var lstNow = plannerService.lst(nowJd, lon)
+                var lstNow = plannerService.lst(jdShow, lon)
 
-                var selDec = null, selColor = "#ffd060"
+                var selDec = null, selRa = 0, selColor = "#ffd060"
                 for (var pi = 0; pi < skyArcDetailedWindow.objects.length; pi++) {
                     var po = skyArcDetailedWindow.objects[pi]
                     if (po.name === skyArcDetailedWindow.selectedName) {
-                        selDec = po.decDeg
+                        selDec = po.decDeg; selRa = po.raHours
                         if (po.color) selColor = po.color.toString()
                         continue
                     }
-                    if (po.observed) drawPath(po.decDeg, po.color.toString(), 1.4)
+                    if (po.observed) drawPath(po.raHours, po.decDeg, po.color.toString(), 1.4)
                 }
-                if (selDec !== null) drawPath(selDec, selColor, 2.8)
+                if (selDec !== null) drawPath(selRa, selDec, selColor, 2.8)
 
                 for (var oi = 0; oi < skyArcDetailedWindow.objects.length; oi++) {
                     var o = skyArcDetailedWindow.objects[oi]
@@ -400,14 +546,12 @@ Window {
                     if (!dragging) domeCanvas.selectAt(mouse.x, mouse.y)
                     else domeCanvas.requestPaint()
                 }
-            }
-
-            WheelHandler {
-                onWheel: function(event) {
-                    var f = event.angleDelta.y > 0 ? 1.15 : 0.87
+                onWheel: function(wheel) {
+                    var f = wheel.angleDelta.y > 0 ? 1.15 : 0.87
                     skyArcDetailedWindow.zoom = Math.max(0.5, Math.min(8.0, skyArcDetailedWindow.zoom * f))
                     domeCanvas.interacting = true
                     zoomSettle.restart()
+                    wheel.accepted = true
                 }
             }
 
@@ -442,13 +586,15 @@ Window {
             anchors { fill: parent; margins: 20 }
             spacing: 12
 
-            Text { text: "Live Sky"; font.pixelSize: 11; font.bold: true; color: pal.placeholderText }
+            Text { text: skyArcDetailedWindow.nightLabel() + " — Sunset to Sunrise"
+                   font.pixelSize: 11; font.bold: true; color: pal.placeholderText }
             Text {
                 width: parent.width
                 text: {
-                    var t = new Date(skyArcDetailedWindow.nowMs)
+                    var t = new Date(skyArcDetailedWindow.displayMs)
                     var hh = t.getUTCHours(), mm = t.getUTCMinutes()
-                    return "Now " + (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm + " UTC  ·  "
+                    var when = skyArcDetailedWindow.displayLive ? "Live now" : "Night midpoint"
+                    return when + " " + (hh < 10 ? "0" : "") + hh + ":" + (mm < 10 ? "0" : "") + mm + " UTC  ·  "
                            + skyArcDetailedWindow.stars.length + " stars"
                 }
                 font.pixelSize: 13; color: pal.windowText
