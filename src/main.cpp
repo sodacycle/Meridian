@@ -6,6 +6,7 @@
 #include "fitsscanner.h"
 #include "fileorganizer.h"
 #include "fitsimageprovider.h"
+#include "framecullingservice.h"
 #include "weatherservice.h"
 #include "metadatamodel.h"
 #include "catalogservice.h"
@@ -42,6 +43,7 @@ int main(int argc, char *argv[])
     LightPollutionService   lightPollutionService;
     WikiService             wikiService;
     SeestarService          seestarService;
+    FrameCullingService     frameCullingService;
 
     QObject::connect(&locationService, &LocationService::locationObtained,
                      &weatherService,  &WeatherService::setLocation);
@@ -70,6 +72,7 @@ int main(int argc, char *argv[])
     ctx->setContextProperty("lightPollutionService",   &lightPollutionService);
     ctx->setContextProperty("wikiService",             &wikiService);
     ctx->setContextProperty("seestarService",          &seestarService);
+    ctx->setContextProperty("cullingService",          &frameCullingService);
 
     static const QStringList columns = {
         "Frame Type", "File", "Target", "Start Time UTC", "End Time UTC",

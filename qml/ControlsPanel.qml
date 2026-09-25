@@ -94,6 +94,16 @@ Rectangle {
                     plannerWindow.raise()
                 }
             }
+            Button {
+                text: "Auto-Sort"
+                ToolTip.visible: hovered
+                ToolTip.delay: 500
+                ToolTip.text: "Automatically identify frames that are measurably\nworse than a control image you choose."
+                onClicked: {
+                    autoSortWindow.show()
+                    autoSortWindow.raise()
+                }
+            }
         }
 
         Column {

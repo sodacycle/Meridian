@@ -550,6 +550,11 @@ ApplicationWindow {
         visible: false
     }
 
+    AutoSortWindow {
+        id: autoSortWindow
+        visible: false
+    }
+
     FitsViewerManager {
         id: viewerManager
         transientParent:    window
