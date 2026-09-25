@@ -24,6 +24,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **Catalog Breakdown** — organises your imaging history by catalog (Messier, NGC, IC, Caldwell, Sharpless, Barnard, LDN, LBN, Abell, PGC, UGC, and more).
 - **Observed Sky Paths** — below the Catalog Breakdown, an altitude-vs-time sky-arc chart plots every observed target's altitude across tonight from its FITS RA/Dec, each target in its own colour, with twilight shading, altitude grid, and an hourly time axis. Click a target to highlight it and grey the rest.
 - **File Organiser** — batch tools for organising stacked files, scanning/deleting JPG previews, preparing Siril folder structures, and removing empty directories — all operating across all scan directories simultaneously.
+- **Auto-Sort** *(in development)* — automatic frame-quality analysis that flags subs measurably worse than a control image you choose. Pick a good sub and Meridian detects its stars entirely in C++ (no external astrometry) and reports a baseline of star count, median FWHM, eccentricity, flux, and background noise. Batch comparison across a full set of subs and a Keep/Reject review workflow are planned — nothing is ever rejected without your approval, and it reuses the existing `.mrj` rejection mechanism.
 - **Native system theme** — automatically matches your KDE Plasma or GTK desktop. Wayland native rendering is supported.
 
 ---
@@ -184,6 +185,26 @@ All operations display real-time progress and are non-destructive to FITS data e
 
 ---
 
+### Auto-Sort
+
+> **In development** — the control-image analyzer below works today. Batch comparison across a full frame set, the PASS / BORDERLINE / REJECT decision engine, and the review workflow are not yet implemented. See the [Auto-Sort wiki page](https://github.com/sodacycle/Meridian/wiki/Auto-Sort) for the full plan.
+
+Opened from the **Auto-Sort** button in the controls panel, in its own window. Choose a good `.fit` / `.fits` sub as a control image and Meridian analyses it off the UI thread and reports its baseline quality metrics:
+
+| Metric | What it measures |
+|---|---|
+| **Stars detected / usable** | Star-like sources above the background threshold, and the isolated subset reliable enough for shape/flux statistics |
+| **Median FWHM** | Median star width in pixels — smaller is sharper |
+| **Median star flux** | Median integrated brightness of usable stars, in ADU |
+| **Median eccentricity** | Median star roundness (0 = round, closer to 1 = elongated) |
+| **Background level / noise** | Sigma-clipped background median and noise, with star pixels excluded |
+
+Star detection runs entirely in C++ (no external astrometry library): iterative sigma-clipped background estimation, connected-component source extraction above `background + 5σ` with footprint and edge filtering, and a second-moment ellipse fit for FWHM and eccentricity. Colour (Bayer/OSC) frames are analysed on a superpixel-averaged luminance plane. If fewer than 50 usable stars are found, an advisory warning suggests choosing a different control frame.
+
+The guiding principle is that Meridian surfaces evidence rather than deciding for you — any rejection is still applied through the same `.mrj` sidecar mechanism used by the FITS Image Viewer.
+
+---
+
 ## Download
 
 Pre-built AppImages for Linux are available on the [Releases page](https://github.com/sodacycle/Meridian/releases/).
@@ -299,6 +320,9 @@ Meridian/
 │   ├── fitsparser.*        FITS header parser
 │   ├── fitsscanner.*       Recursive file scanner
 │   ├── fitsimageprovider.* QML image provider for FITS data
+│   ├── fitspixelreader.*   Shared raw-pixel FITS decoder (mono/RGB/Bayer)
+│   ├── starfinder.*        Star detection + FWHM/eccentricity/flux measurement
+│   ├── framecullingservice.* Auto-Sort control-image analysis
 │   ├── fileorganizer.*     Batch file organiser
 │   ├── metadatamodel.*     Table and summary models
 │   ├── catalogservice.*    NGC/IC/Messier catalog loader
@@ -314,6 +338,7 @@ Meridian/
 │   ├── ControlsPanel.qml
 │   ├── AdvancedToolsPanel.qml
 │   ├── PlannerWindow.qml
+│   ├── AutoSortWindow.qml
 │   ├── ImagingCalendar.qml
 │   ├── TargetSummaryView.qml
 │   ├── CalibrationSummaryView.qml
