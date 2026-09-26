@@ -59,6 +59,10 @@ qt_add_qml_module(Meridian
         qml/FileDetailsView.qml
         qml/FitsImageViewer.qml
         qml/FitsViewerManager.qml
+        qml/CullingView.qml
+        qml/FileListView.qml
+        qml/SettingsView.qml
+        qml/PlaceholderSection.qml
         qml/AboutDialog.qml
         qml/AutoSortWindow.qml
         qml/PlannerWindow.qml

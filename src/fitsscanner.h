@@ -100,6 +100,7 @@ public:
     Q_INVOKABLE void scanDirectories();
     Q_INVOKABLE void scanDirectory(const QString &dirPath);
     Q_INVOKABLE void cancel();
+    Q_INVOKABLE QStringList listFitsFiles() const;
 
     static bool metadataIndicatesStacking(const QHash<QString, QVariant> &header);
     static QString anyField(const QHash<QString, QVariant> &header,
@@ -128,6 +129,7 @@ private:
     ScanResult aggregateEntries(const QList<MetadataEntry> &entries) const;
     ScanResult buildScanResult(const QStringList &paths);
     void walkDirectory(const QString &dir, QList<MetadataEntry> &results);
+    void collectFitsFiles(const QString &dir, QStringList &out) const;
     void onScanFinished(QFutureWatcher<ScanResult> *watcher);
 
     QAtomicInt m_canceled;

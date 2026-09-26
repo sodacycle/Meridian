@@ -95,14 +95,11 @@ Rectangle {
                 }
             }
             Button {
-                text: "Auto-Sort"
+                text: "Image Viewer"
                 ToolTip.visible: hovered
                 ToolTip.delay: 500
-                ToolTip.text: "Automatically identify frames that are measurably\nworse than a control image you choose."
-                onClicked: {
-                    autoSortWindow.show()
-                    autoSortWindow.raise()
-                }
+                ToolTip.text: "Open the Image Viewer to browse your .fit files,\ninspect frames, and run Culling."
+                onClicked: viewerManager.openViewer()
             }
         }
 

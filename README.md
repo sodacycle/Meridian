@@ -24,7 +24,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **Catalog Breakdown** — organises your imaging history by catalog (Messier, NGC, IC, Caldwell, Sharpless, Barnard, LDN, LBN, Abell, PGC, UGC, and more).
 - **Observed Sky Paths** — below the Catalog Breakdown, an altitude-vs-time sky-arc chart plots every observed target's altitude across tonight from its FITS RA/Dec, each target in its own colour, with twilight shading, altitude grid, and an hourly time axis. Click a target to highlight it and grey the rest.
 - **File Organiser** — batch tools for organising stacked files, scanning/deleting JPG previews, preparing Siril folder structures, and removing empty directories — all operating across all scan directories simultaneously.
-- **Auto-Sort** *(in development)* — automatic frame-quality analysis that flags subs measurably worse than a control image you choose. Pick a good sub and Meridian detects its stars entirely in C++ (no external astrometry) and reports a baseline of star count, median FWHM, eccentricity, flux, and background noise. Batch comparison across a full set of subs and a Keep/Reject review workflow are planned — nothing is ever rejected without your approval, and it reuses the existing `.mrj` rejection mechanism.
+- **Frame Culling (Auto-Sort)** — the **Culling** tab of the Image Viewer flags subs measurably worse than a control image you choose. Pick a good sub — or let **Recommend for Me** score the frames matching your opened image and pick the best — then batch-analyze the compatible set at a chosen sensitivity (Conservative / Balanced / Aggressive), classify each frame **PASS / BORDERLINE / REJECT**, review and Keep/Reject individual frames, and apply the result. Star detection runs entirely in C++ (no external astrometry). Nothing is rejected without your approval, and Apply reuses the existing `.mrj` rejection mechanism.
 - **Native system theme** — automatically matches your KDE Plasma or GTK desktop. Wayland native rendering is supported.
 
 ---
@@ -33,7 +33,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 
 ### FITS Image Viewer
 
-Click any file in the metadata table to open it in a dedicated dark-themed viewer. Supports both FITS (`.fit` / `.fits`) and JPEG (`.jpg` / `.jpeg`) files. All processing is done locally in C++ — no external tools needed.
+Click any file in the metadata table to open it in a dedicated dark-themed viewer, or use the **Image Viewer** button in the controls panel to open the workspace and browse. The viewer is a **tabbed workspace** with a left rail — **Viewer** (display + processing, below), **Files** (a list of the `.fit` files in your scan folders), **Culling** (frame culling, see below), **Settings** (auto-sort defaults and the Viewer's stretch/clip/denoise slider limits, persisted between sessions), and a placeholder **Stacking** tab. Supports both FITS (`.fit` / `.fits`) and JPEG (`.jpg` / `.jpeg`) files. All processing is done locally in C++ — no external tools needed.
 
 **Navigation and zoom:**
 - Zoom in/out, fit-to-window, and 1:1 pixel-perfect viewing
@@ -185,11 +185,11 @@ All operations display real-time progress and are non-destructive to FITS data e
 
 ---
 
-### Auto-Sort
+### Frame Culling (Auto-Sort)
 
-> **In development** — the control-image analyzer below works today. Batch comparison across a full frame set, the PASS / BORDERLINE / REJECT decision engine, and the review workflow are not yet implemented. See the [Auto-Sort wiki page](https://github.com/sodacycle/Meridian/wiki/Auto-Sort) for the full plan.
+The full **Control → Analyze → Review → Apply** pipeline is functional. See the [Auto-Sort wiki page](https://github.com/sodacycle/Meridian/wiki/Auto-Sort) for details.
 
-Opened from the **Auto-Sort** button in the controls panel, in its own window. Choose a good `.fit` / `.fits` sub as a control image and Meridian analyses it off the UI thread and reports its baseline quality metrics:
+Frame culling is the **Culling** tab of the Image Viewer (open the viewer, then pick Culling in the left rail). Choose a good `.fit` / `.fits` sub as a control image — or press **Recommend for Me** — and Meridian analyses it off the UI thread and reports its baseline quality metrics:
 
 | Metric | What it measures |
 |---|---|
@@ -198,6 +198,10 @@ Opened from the **Auto-Sort** button in the controls panel, in its own window. C
 | **Median star flux** | Median integrated brightness of usable stars, in ADU |
 | **Median eccentricity** | Median star roundness (0 = round, closer to 1 = elongated) |
 | **Background level / noise** | Sigma-clipped background median and noise, with star pixels excluded |
+
+**Recommend a control image.** If you're unsure which frame is best, **Recommend for Me** scores the frames *compatible with the image you opened* — same target, filter, exposure, binning, gain, camera, and telescope — analysing them in parallel with a progress readout, and picks the sharpest, star-richest one (`usableStars × log(1 + flux/noise) / (FWHM × (1 + eccentricity))`). It scans only the matching set, never the whole library.
+
+**Analyze, review, apply.** With a control image set, choose which metrics to weigh and a sensitivity preset (**Conservative / Balanced / Aggressive** — which drive the threshold table), then **Analyze Frames** runs the same star analysis across every compatible frame in parallel and classifies each **PASS / BORDERLINE / REJECT** (or **INSUFFICIENT DATA**). The **Results** screen tallies the counts with a rejection-reason breakdown; **Review Rejected / Borderline** steps through those frames one at a time — each shown with your current Viewer stretch/denoise and its per-metric deviation from the control — with **Keep / Reject** overrides. **Apply** writes the approved rejections to `.mrj` sidecars, which appear immediately in the Viewer and Files tabs and persist on the next scan.
 
 Star detection runs entirely in C++ (no external astrometry library): iterative sigma-clipped background estimation, connected-component source extraction above `background + 5σ` with footprint and edge filtering, and a second-moment ellipse fit for FWHM and eccentricity. Colour (Bayer/OSC) frames are analysed on a superpixel-averaged luminance plane. If fewer than 50 usable stars are found, an advisory warning suggests choosing a different control frame.
 
@@ -322,7 +326,7 @@ Meridian/
 │   ├── fitsimageprovider.* QML image provider for FITS data
 │   ├── fitspixelreader.*   Shared raw-pixel FITS decoder (mono/RGB/Bayer)
 │   ├── starfinder.*        Star detection + FWHM/eccentricity/flux measurement
-│   ├── framecullingservice.* Auto-Sort control-image analysis
+│   ├── framecullingservice.* Frame culling — control-image analyzer + recommender
 │   ├── fileorganizer.*     Batch file organiser
 │   ├── metadatamodel.*     Table and summary models
 │   ├── catalogservice.*    NGC/IC/Messier catalog loader
@@ -338,14 +342,18 @@ Meridian/
 │   ├── ControlsPanel.qml
 │   ├── AdvancedToolsPanel.qml
 │   ├── PlannerWindow.qml
-│   ├── AutoSortWindow.qml
+│   ├── AutoSortWindow.qml   (legacy standalone Auto-Sort window; superseded by the Culling tab)
 │   ├── ImagingCalendar.qml
 │   ├── TargetSummaryView.qml
 │   ├── CalibrationSummaryView.qml
 │   ├── CatalogBreakdown.qml
 │   ├── FileDetailsView.qml
-│   ├── FitsImageViewer.qml
+│   ├── FitsImageViewer.qml  Tabbed viewer workspace (Viewer / Files / Culling / Stacking / Settings)
 │   ├── FitsViewerManager.qml
+│   ├── FileListView.qml     Files tab — .fit list from the scan folders
+│   ├── CullingView.qml      Culling tab — analyzer, recommender, culling workflow
+│   ├── SettingsView.qml     Settings tab — auto-sort defaults + viewer stretch limits
+│   ├── PlaceholderSection.qml  Stacking tab placeholder
 │   ├── AboutDialog.qml
 │   └── components/         Reusable QML sub-components
 │       └── ProgressIndicator.qml

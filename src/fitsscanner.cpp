@@ -307,6 +307,34 @@ void FitsScanner::walkDirectory(const QString &dir, QList<MetadataEntry> &result
 }
 
 QStringList FitsScanner::directories() const { return m_directories; }
+
+void FitsScanner::collectFitsFiles(const QString &dir, QStringList &out) const
+{
+    static const QRegularExpression fitsRe("\\.(fit|fits)$", QRegularExpression::CaseInsensitiveOption);
+
+    QDirIterator it(dir, QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+    while (it.hasNext()) {
+        it.next();
+        QFileInfo info = it.fileInfo();
+        if (info.isDir()) {
+            if (!SCAN_SKIP_DIRS.contains(info.fileName().toLower()))
+                collectFitsFiles(info.absoluteFilePath(), out);
+            continue;
+        }
+        if (info.fileName().contains(fitsRe))
+            out.append(info.absoluteFilePath());
+    }
+}
+
+QStringList FitsScanner::listFitsFiles() const
+{
+    QStringList files;
+    for (const QString &dir : m_directories)
+        collectFitsFiles(dir, files);
+    files.sort(Qt::CaseInsensitive);
+    files.removeDuplicates();
+    return files;
+}
 QString FitsScanner::currentScanDirectory() const { return m_currentScanDirectory; }
 
 QString FitsScanner::selectDirectory()

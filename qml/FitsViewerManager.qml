@@ -11,6 +11,10 @@ Item {
 
     signal removeRowRequested(string path)
 
+    function openViewer() {
+        fitsViewer.showFiles()
+    }
+
     function openFile(path) {
         var rows = manager.displayRows
         var idx  = -1
@@ -51,6 +55,7 @@ Item {
         transientParent: manager.transientParent
         viewedPaths:     manager.viewedPaths
         rejectedSet:     manager.rejectedSet
+        displayRows:     manager.displayRows
 
         onFileDeleted: function(path) {
             organizer.writeSidecar(path, false)
@@ -99,6 +104,15 @@ Item {
         }
 
         onRequestOpenPath: function(path) { manager.openFile(path) }
+
+        onRejectionsApplied: function(paths) {
+            for (var i = 0; i < paths.length; i++)
+                manager.rejectedSet[paths[i]] = true
+            manager.rejectedSet = Object.assign({}, manager.rejectedSet)
+            fitsViewer.rejectedCount = Object.keys(manager.rejectedSet).length
+            if (manager.rejectedSet[fitsViewer.filePath])
+                fitsViewer.isRejected = true
+        }
 
         onRequestPrevious: {
             var idx  = fitsViewer.fileIndex - 1
