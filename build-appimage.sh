@@ -219,6 +219,7 @@ _ensure_plugin "$QT_PLUGINS_DIR/xcbglintegrations/libqxcb-egl-integration.so" \
 
 # QML modules this app actually imports
 for _module in \
+    QtCore \
     QtQuick \
     QtQuick/Controls \
     QtQuick/Layouts \
@@ -335,7 +336,11 @@ for lib in \
 done
 
 # ── Write AppRun ──────────────────────────────────────────────────────────────
+# linuxdeploy leaves AppRun as a symlink to usr/bin/Meridian; writing through it
+# would overwrite the real binary with this script. Remove it first so AppRun
+# becomes a regular launcher file and the executable stays intact.
 info "Writing AppRun..."
+rm -f "$APPDIR/AppRun"
 cat > "$APPDIR/AppRun" << 'APPRUN'
 #!/usr/bin/env bash
 HERE="$(cd "$(dirname "$0")" && pwd)"

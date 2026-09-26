@@ -20,7 +20,7 @@ Dialog {
             spacing: 12
 
             Image {
-                source: "qrc:/Meridian/resources/meridian.svg"
+                source: "qrc:/qt/qml/Meridian/resources/meridian.svg"
                 width: 56; height: 56
                 fillMode: Image.PreserveAspectFit
                 smooth: true

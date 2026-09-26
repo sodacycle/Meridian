@@ -18,6 +18,18 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Quick QuickControls2 Network Concurrent Positioning)
 
+# Adopt the modern Qt QML policies to silence the configure-time author warnings:
+# QTP0001 -> the ":/qt/qml/Meridian/..." resource prefix, QTP0004 -> auto-generated
+# qmldir files for the qml/components subdirectory. Resource lookups in C++ already
+# try this prefix (catalogservice) or search the resource tree (main.cpp); the About
+# dialog icon uses the matching qrc path. Guards keep this valid on Qt versions that
+# predate each policy.
+foreach(_qt_policy QTP0001 QTP0004)
+    if(QT_KNOWN_POLICY_${_qt_policy})
+        qt_policy(SET ${_qt_policy} NEW)
+    endif()
+endforeach()
+
 # Qt's QML module machinery creates a staging directory named after the target
 # in CMAKE_BINARY_DIR.  Without this, the linker output path collides with that
 # directory when the target and the QML URI share the same name ("Meridian").
