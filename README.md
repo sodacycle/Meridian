@@ -20,7 +20,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **DSO Catalog** — built-in NGC/IC/Messier catalog with 13 000+ objects. Supports Seestar S50 mode (auto-filters to objects the smart telescope can reach).
 - **Seestar Integration** — status panel showing telescope connection, free space, and telescope file detection. When `MyWorks/` is found on the Seestar volume, it is automatically added to the scan directory list.
 - **Wikipedia Lookup** — fetches the Wikipedia lead-image thumbnail for any catalog object on demand and displays it alongside the object stats in the Planner (the article extract is also retrieved but not yet shown).
-- **FITS Image Viewer** — display and inspect individual FITS images with zoom, pan, asinh stretch, denoising, image rejection workflow, and a scrollable thumbnail strip of every image viewed this session. Also opens `.jpg` / `.jpeg` preview files (stretch and denoise controls are hidden; rejection workflow not applicable).
+- **Image Viewer** — display and inspect individual FITS images with zoom, pan, asinh stretch, denoising, image rejection workflow, and a scrollable thumbnail strip of every image viewed this session. Also opens `.jpg` / `.jpeg` preview files (stretch and denoise controls are hidden; rejection workflow not applicable).
 - **Catalog Breakdown** — organises your imaging history by catalog (Messier, NGC, IC, Caldwell, Sharpless, Barnard, LDN, LBN, Abell, PGC, UGC, and more).
 - **Observed Sky Paths** — below the Catalog Breakdown, an altitude-vs-time sky-arc chart plots every observed target's altitude across tonight from its FITS RA/Dec, each target in its own colour, with twilight shading, altitude grid, and an hourly time axis. Click a target to highlight it and grey the rest.
 - **File Organiser** — batch tools for organising stacked files, scanning/deleting JPG previews, preparing Siril folder structures, and removing empty directories — all operating across all scan directories simultaneously.
@@ -31,7 +31,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 
 ## Features in Detail
 
-### FITS Image Viewer
+### Image Viewer
 
 Click any file in the metadata table to open it in a dedicated dark-themed viewer, or use the **Image Viewer** button in the controls panel to open the workspace and browse. The viewer is a **tabbed workspace** with a left rail — **Viewer** (display + processing, below), **Files** (a list of the `.fit` files in your scan folders), **Culling** (frame culling, see below), **Settings** (auto-sort defaults and the Viewer's stretch/clip/denoise slider limits, persisted between sessions), and a placeholder **Stacking** tab. Supports both FITS (`.fit` / `.fits`) and JPEG (`.jpg` / `.jpeg`) files. All processing is done locally in C++ — no external tools needed.
 
@@ -101,7 +101,7 @@ The metadata table displays detailed information for every scanned FITS file:
 - **Temperature toggle** — click the `°C / °F` button in the calendar header to switch units
 - **Show All** — appears after filtering to quickly restore the full list
 - **JPG integration** — scan for and view JPG preview files alongside FITS metadata
-- Click any file row to open it instantly in the FITS Image Viewer
+- Click any file row to open it instantly in the Image Viewer
 
 ---
 
@@ -205,7 +205,7 @@ Frame culling is the **Culling** tab of the Image Viewer (open the viewer, then 
 
 Star detection runs entirely in C++ (no external astrometry library): iterative sigma-clipped background estimation, connected-component source extraction above `background + 5σ` with footprint and edge filtering, and a second-moment ellipse fit for FWHM and eccentricity. Colour (Bayer/OSC) frames are analysed on a superpixel-averaged luminance plane. If fewer than 50 usable stars are found, an advisory warning suggests choosing a different control frame.
 
-The guiding principle is that Meridian surfaces evidence rather than deciding for you — any rejection is still applied through the same `.mrj` sidecar mechanism used by the FITS Image Viewer.
+The guiding principle is that Meridian surfaces evidence rather than deciding for you — any rejection is still applied through the same `.mrj` sidecar mechanism used by the Image Viewer.
 
 ---
 
