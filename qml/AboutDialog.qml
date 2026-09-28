@@ -45,7 +45,7 @@ Dialog {
                     Text {
                         id: versionLabel
                         anchors.centerIn: parent
-                        text: "v1.0.4a"
+                        text: "v" + Qt.application.version
                         color: window.sysPal.highlightedText
                         font.pixelSize: 11; font.bold: true
                     }

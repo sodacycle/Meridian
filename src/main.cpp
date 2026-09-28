@@ -16,6 +16,7 @@
 #include "lightpollutionservice.h"
 #include "wikiservice.h"
 #include "seestarservice.h"
+#include "exportservice.h"
 
 int main(int argc, char *argv[])
 {
@@ -44,6 +45,7 @@ int main(int argc, char *argv[])
     WikiService             wikiService;
     SeestarService          seestarService;
     FrameCullingService     frameCullingService;
+    ExportService           exportService;
 
     QObject::connect(&locationService, &LocationService::locationObtained,
                      &weatherService,  &WeatherService::setLocation);
@@ -73,6 +75,7 @@ int main(int argc, char *argv[])
     ctx->setContextProperty("wikiService",             &wikiService);
     ctx->setContextProperty("seestarService",          &seestarService);
     ctx->setContextProperty("cullingService",          &frameCullingService);
+    ctx->setContextProperty("exportService",           &exportService);
 
     static const QStringList columns = {
         "Frame Type", "File", "Target", "Start Time UTC", "End Time UTC",
@@ -89,6 +92,7 @@ int main(int argc, char *argv[])
             targetSummaryModel.setEntries(targets);
             calibrationSummaryModel.setEntries(cals);
             catalogModel.buildFromTargets(targets);
+            exportService.setData(meta, columns, targets);
 
             QString minDate, maxDate;
 

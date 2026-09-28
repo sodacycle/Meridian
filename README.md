@@ -24,6 +24,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **Catalog Breakdown** — organises your imaging history by catalog (Messier, NGC, IC, Caldwell, Sharpless, Barnard, LDN, LBN, Abell, PGC, UGC, and more).
 - **Observed Sky Paths** — below the Catalog Breakdown, an altitude-vs-time sky-arc chart plots every observed target's altitude across tonight from its FITS RA/Dec, each target in its own colour, with twilight shading, altitude grid, and an hourly time axis. Click a target to highlight it and grey the rest.
 - **File Organiser** — batch tools for organising stacked files, scanning/deleting JPG previews, preparing Siril folder structures, and removing empty directories — all operating across all scan directories simultaneously.
+- **Export / Reports** — from **File → Export**, save the Target Summary or the full session history as **CSV**, or a self-contained **printable HTML report** (target summary + session history, styled for print) — after a scan.
 - **Frame Culling (Auto-Sort)** — the **Culling** tab of the Image Viewer flags subs measurably worse than a control image you choose. Pick a good sub — or let **Recommend for Me** score the frames matching your opened image and pick the best — then batch-analyze the compatible set at a chosen sensitivity (Conservative / Balanced / Aggressive), classify each frame **PASS / BORDERLINE / REJECT**, review and Keep/Reject individual frames, and apply the result. Star detection runs entirely in C++ (no external astrometry). Nothing is rejected without your approval, and Apply reuses the existing `.mrj` rejection mechanism.
 - **Native system theme** — automatically matches your KDE Plasma or GTK desktop. Wayland native rendering is supported.
 
@@ -209,6 +210,20 @@ The guiding principle is that Meridian surfaces evidence rather than deciding fo
 
 ---
 
+### Export / Reports
+
+Once a scan has run, **File → Export** offers three outputs (each opens a save dialog):
+
+| Export | Contents |
+|---|---|
+| **Target Summary (CSV)** | One row per target — target name, FITS count, files with exposure, total integration time |
+| **Session History (CSV)** | One row per scanned FITS file, with every metadata column |
+| **Report (HTML)** | A self-contained, printable HTML page: header with totals, the Target Summary table, and a session-history table (rejected frames struck through), styled with `@media print` rules |
+
+CSV fields are RFC-4180 quoted where needed; the HTML report needs no external assets and opens in any browser.
+
+---
+
 ## Download
 
 Pre-built AppImages for Linux are available on the [Releases page](https://github.com/sodacycle/Meridian/releases/).
@@ -336,7 +351,8 @@ Meridian/
 │   ├── weatherservice.*    Open-Meteo weather fetcher
 │   ├── lightpollutionservice.* Bortle/SQM lookup
 │   ├── wikiservice.*       Wikipedia thumbnail + article-extract fetcher
-│   └── seestarservice.*    Seestar S50 USB mount detector
+│   ├── seestarservice.*    Seestar S50 USB mount detector
+│   └── exportservice.*     CSV / printable-HTML export of summaries and history
 ├── qml/                    QML/UI layer
 │   ├── main.qml
 │   ├── ControlsPanel.qml

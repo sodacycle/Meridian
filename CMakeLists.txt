@@ -55,6 +55,7 @@ qt_add_executable(Meridian WIN32
     src/lightpollutionservice.h   src/lightpollutionservice.cpp
     src/wikiservice.h             src/wikiservice.cpp
     src/seestarservice.h          src/seestarservice.cpp
+    src/exportservice.h           src/exportservice.cpp
 )
 
 qt_add_qml_module(Meridian

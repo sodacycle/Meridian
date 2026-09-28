@@ -109,6 +109,23 @@ Rectangle {
                             organizer.removeEmptyFolders(root.directories)
                         }
                     }
+                    Button {
+                        id: exportBtn
+                        width: mainRow.btnW
+                        text: "Export…"
+                        enabled: exportService.hasData && !organizer.running
+                        ToolTip.visible: hovered; ToolTip.delay: 500
+                        ToolTip.text: "Export the target summary or session history as CSV,\nor a printable HTML report."
+                        onClicked: exportMenu.open()
+
+                        Menu {
+                            id: exportMenu
+                            y: exportBtn.height
+                            MenuItem { text: "Target Summary (CSV)…";  onTriggered: exportService.exportTargetSummaryCsv() }
+                            MenuItem { text: "Session History (CSV)…"; onTriggered: exportService.exportSessionHistoryCsv() }
+                            MenuItem { text: "Report (HTML)…";          onTriggered: exportService.exportReportHtml() }
+                        }
+                    }
                 }
 
                 Row {
@@ -274,6 +291,14 @@ Rectangle {
 
         function onOperationError(error) {
             root.log("Error: " + error)
+        }
+    }
+
+    Connections {
+        target: exportService
+        function onExportFinished(success, path) {
+            root.log(success ? "Exported to " + path
+                             : "Export failed: could not write " + path)
         }
     }
 }

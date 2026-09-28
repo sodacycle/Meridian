@@ -52,6 +52,30 @@ ApplicationWindow {
                 }
             }
             MenuSeparator {}
+            Menu {
+                title: "Export"
+                delegate: TipMenuItem {}
+
+                Action {
+                    text: "Target Summary (CSV)…"
+                    enabled: exportService.hasData
+                    property string tip: "Save the target summary (targets, sessions, integration time) as a CSV file."
+                    onTriggered: exportService.exportTargetSummaryCsv()
+                }
+                Action {
+                    text: "Session History (CSV)…"
+                    enabled: exportService.hasData
+                    property string tip: "Save every scanned FITS file's metadata as a CSV file."
+                    onTriggered: exportService.exportSessionHistoryCsv()
+                }
+                Action {
+                    text: "Report (HTML)…"
+                    enabled: exportService.hasData
+                    property string tip: "Save a printable HTML report of the target summary and session history."
+                    onTriggered: exportService.exportReportHtml()
+                }
+            }
+            MenuSeparator {}
             Action {
                 text: "Stop"
                 shortcut: "Ctrl+."
@@ -601,6 +625,14 @@ ApplicationWindow {
         }
         function onScanError(error) {
             controlsPanel.setStatus("Scan error: " + error)
+        }
+    }
+
+    Connections {
+        target: exportService
+        function onExportFinished(success, path) {
+            controlsPanel.setStatus(success ? "Exported to " + path
+                                            : "Export failed: could not write " + path)
         }
     }
 }
