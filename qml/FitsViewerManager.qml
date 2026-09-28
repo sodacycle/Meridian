@@ -11,18 +11,28 @@ Item {
 
     signal removeRowRequested(string path)
 
+    property var navList: []
+
     function openViewer() {
         fitsViewer.showFiles()
     }
 
     function openFile(path) {
-        var rows = manager.displayRows
-        var idx  = -1
-        for (var i = 0; i < rows.length; i++) {
-            if ((rows[i]["Path"] || "") === path) { idx = i; break }
-        }
-        fitsViewer.fileIndex  = idx
-        fitsViewer.fileCount  = rows.length
+        var list = []
+        for (var i = 0; i < manager.displayRows.length; i++)
+            list.push(manager.displayRows[i]["Path"] || "")
+        manager.navList = list
+        manager.openAt(path)
+    }
+
+    function openInList(path, paths) {
+        manager.navList = paths
+        manager.openAt(path)
+    }
+
+    function openAt(path) {
+        fitsViewer.fileIndex  = manager.navList.indexOf(path)
+        fitsViewer.fileCount  = manager.navList.length
         fitsViewer.isRejected = !!manager.rejectedSet[path]
         fitsViewer.openFile(path)
 
@@ -105,6 +115,8 @@ Item {
 
         onRequestOpenPath: function(path) { manager.openFile(path) }
 
+        onRequestOpenInList: function(path, paths) { manager.openInList(path, paths) }
+
         onRejectionsApplied: function(paths) {
             for (var i = 0; i < paths.length; i++)
                 manager.rejectedSet[paths[i]] = true
@@ -114,32 +126,25 @@ Item {
                 fitsViewer.isRejected = true
         }
 
-        onRequestPrevious: {
-            var idx  = fitsViewer.fileIndex - 1
-            var rows = manager.displayRows
-            if (idx >= 0 && idx < rows.length) {
-                var p = rows[idx]["Path"] || ""
-                fitsViewer.fileIndex  = idx
-                fitsViewer.isRejected = !!manager.rejectedSet[p]
-                fitsViewer.openFile(p)
+        onUnrejectionsApplied: function(paths) {
+            for (var i = 0; i < paths.length; i++)
+                delete manager.rejectedSet[paths[i]]
+            manager.rejectedSet = Object.assign({}, manager.rejectedSet)
+            fitsViewer.rejectedCount = Object.keys(manager.rejectedSet).length
+            if (!manager.rejectedSet[fitsViewer.filePath])
+                fitsViewer.isRejected = false
+        }
 
-                var vp = manager.viewedPaths.slice()
-                if (vp.indexOf(p) === -1) { vp.push(p); manager.viewedPaths = vp }
-            }
+        onRequestPrevious: {
+            var idx = fitsViewer.fileIndex - 1
+            if (idx >= 0 && idx < manager.navList.length)
+                manager.openAt(manager.navList[idx])
         }
 
         onRequestNext: {
-            var idx  = fitsViewer.fileIndex + 1
-            var rows = manager.displayRows
-            if (idx >= 0 && idx < rows.length) {
-                var p = rows[idx]["Path"] || ""
-                fitsViewer.fileIndex  = idx
-                fitsViewer.isRejected = !!manager.rejectedSet[p]
-                fitsViewer.openFile(p)
-
-                var vp = manager.viewedPaths.slice()
-                if (vp.indexOf(p) === -1) { vp.push(p); manager.viewedPaths = vp }
-            }
+            var idx = fitsViewer.fileIndex + 1
+            if (idx >= 0 && idx < manager.navList.length)
+                manager.openAt(manager.navList[idx])
         }
     }
 }

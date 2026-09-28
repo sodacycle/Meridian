@@ -58,6 +58,26 @@ static CullingThresholds thresholdsFor(const QString &sensitivity)
     return { 0.85, 0.70,  0.80, 1.20, 0.70,  0.25, 0.35,  0.25, 0.40,  0.30, 0.50 };
 }
 
+static CullingThresholds customThresholdsFrom(const QVariantMap &m)
+{
+    auto frac = [&](const char *key, double fallback) {
+        return m.contains(key) ? m.value(key).toDouble() / 100.0 : fallback;
+    };
+    CullingThresholds t;
+    t.starPass    = 1.0 - frac("starOk", 0.15);
+    t.starReject  = 1.0 - frac("starReject", 0.30);
+    t.fluxLow     = 1.0 - frac("brightOk", 0.20);
+    t.fluxHigh    = 1.0e9;
+    t.fluxReject  = 1.0 - frac("brightReject", 0.30);
+    t.fwhmPass    = frac("fwhmOk", 0.25);
+    t.fwhmReject  = frac("fwhmReject", 0.35);
+    t.eccPass     = frac("eccOk", 0.25);
+    t.eccReject   = frac("eccReject", 0.40);
+    t.noisePass   = frac("noiseOk", 0.30);
+    t.noiseReject = frac("noiseReject", 0.50);
+    return t;
+}
+
 static QString statusHigh(double dev, double passLimit, double rejectLimit)
 {
     if (dev > rejectLimit) return "bad";
@@ -278,7 +298,9 @@ void FrameCullingService::onBatchFinished()
     m_passCount = m_borderlineCount = m_rejectCount = m_insufficientCount = 0;
     QMap<QString, int> reasonCounts;
 
-    const CullingThresholds thresholds = thresholdsFor(m_sensitivity);
+    const CullingThresholds thresholds = m_sensitivity == "custom"
+        ? customThresholdsFrom(m_customThresholds)
+        : thresholdsFor(m_sensitivity);
 
     for (int i = 0; i < results.size() && i < m_batchCandidates.size(); ++i) {
         const QVariantMap frame = classifyFrame(m_batchCandidates[i], results[i], m_controlQuality,
@@ -340,6 +362,23 @@ QStringList FrameCullingService::rejectionPaths() const
             paths.append(frame["path"].toString());
     }
     return paths;
+}
+
+QStringList FrameCullingService::unrejectionPaths() const
+{
+    QStringList paths;
+    for (const QVariant &value : m_batchResults) {
+        const QVariantMap frame = value.toMap();
+        if (frame["decision"].toString() == "keep"
+            && frame["classification"].toString() == "REJECT")
+            paths.append(frame["path"].toString());
+    }
+    return paths;
+}
+
+void FrameCullingService::setCustomThresholds(const QVariantMap &thresholds)
+{
+    m_customThresholds = thresholds;
 }
 
 QVariantList FrameCullingService::thresholdTable(const QString &sensitivity) const

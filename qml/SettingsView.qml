@@ -60,6 +60,13 @@ Item {
                         RadioButton { text: "Conservative"; checked: settingsView.culling.sensitivity === "conservative"; onToggled: if (checked) settingsView.culling.sensitivity = "conservative"; font.pixelSize: 13 }
                         RadioButton { text: "Balanced";     checked: settingsView.culling.sensitivity === "balanced";     onToggled: if (checked) settingsView.culling.sensitivity = "balanced"; font.pixelSize: 13 }
                         RadioButton { text: "Aggressive";   checked: settingsView.culling.sensitivity === "aggressive";   onToggled: if (checked) settingsView.culling.sensitivity = "aggressive"; font.pixelSize: 13 }
+                        RadioButton { text: "Custom";       checked: settingsView.culling.sensitivity === "custom";       onToggled: if (checked) settingsView.culling.sensitivity = "custom"; font.pixelSize: 13 }
+                    }
+                    Text {
+                        width: parent.width; wrapMode: Text.WordWrap
+                        text: "Custom per-metric thresholds are edited on the Culling tab's Analyze screen."
+                        color: settingsView.muted; font.pixelSize: 11
+                        visible: settingsView.culling.sensitivity === "custom"
                     }
                 }
             }

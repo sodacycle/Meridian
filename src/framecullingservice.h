@@ -5,6 +5,7 @@
 #include <QString>
 #include <QStringList>
 #include <QVariantList>
+#include <QVariantMap>
 #include <QFutureWatcher>
 
 #include "starfinder.h"
@@ -79,7 +80,9 @@ public:
                                      const QStringList &enabledMetrics);
     Q_INVOKABLE void    setFrameDecision(int index, const QString &decision);
     Q_INVOKABLE QStringList  rejectionPaths() const;
+    Q_INVOKABLE QStringList  unrejectionPaths() const;
     Q_INVOKABLE QVariantList thresholdTable(const QString &sensitivity) const;
+    Q_INVOKABLE void         setCustomThresholds(const QVariantMap &thresholds);
 
 signals:
     void analyzingChanged();
@@ -115,6 +118,7 @@ private:
     QStringList  m_batchCandidates;
     QString      m_sensitivity = "balanced";
     QStringList  m_enabledMetrics;
+    QVariantMap  m_customThresholds;
     QVariantList m_batchResults;
     QVariantList m_rejectionReasons;
     int          m_passCount = 0;

@@ -13,6 +13,16 @@ Item {
         property alias metricFwhm:       culling.mFwhm
         property alias metricEcc:        culling.mEccentricity
         property alias metricNoise:      culling.mNoise
+        property alias custStarOk:       culling.custStarOk
+        property alias custStarReject:   culling.custStarReject
+        property alias custBrightOk:     culling.custBrightOk
+        property alias custBrightReject: culling.custBrightReject
+        property alias custFwhmOk:       culling.custFwhmOk
+        property alias custFwhmReject:   culling.custFwhmReject
+        property alias custEccOk:        culling.custEccOk
+        property alias custEccReject:    culling.custEccReject
+        property alias custNoiseOk:      culling.custNoiseOk
+        property alias custNoiseReject:  culling.custNoiseReject
     }
 
     property int step: 1
@@ -56,7 +66,34 @@ Item {
     property bool hasApplied: false
     property int  appliedCount: 0
 
+    property int custStarOk:       15
+    property int custStarReject:   30
+    property int custBrightOk:     20
+    property int custBrightReject: 30
+    property int custFwhmOk:       25
+    property int custFwhmReject:   35
+    property int custEccOk:        25
+    property int custEccReject:    40
+    property int custNoiseOk:      30
+    property int custNoiseReject:  50
+
     signal rejectionsApplied(var paths)
+    signal unrejectionsApplied(var paths)
+
+    Connections {
+        target: cullingService
+        function onBatchResultsChanged() { culling.hasApplied = false }
+    }
+
+    function pushCustomThresholds() {
+        cullingService.setCustomThresholds({
+            starOk: custStarOk, starReject: custStarReject,
+            brightOk: custBrightOk, brightReject: custBrightReject,
+            fwhmOk: custFwhmOk, fwhmReject: custFwhmReject,
+            eccOk: custEccOk, eccReject: custEccReject,
+            noiseOk: custNoiseOk, noiseReject: custNoiseReject
+        })
+    }
 
     function sensitivityLabel() {
         return sensitivity.charAt(0).toUpperCase() + sensitivity.slice(1)
@@ -510,6 +547,7 @@ Item {
                                 RadioButton { text: "Conservative"; checked: culling.sensitivity === "conservative"; onToggled: if (checked) culling.sensitivity = "conservative"; font.pixelSize: 13 }
                                 RadioButton { text: "Balanced";     checked: culling.sensitivity === "balanced";     onToggled: if (checked) culling.sensitivity = "balanced"; font.pixelSize: 13 }
                                 RadioButton { text: "Aggressive";   checked: culling.sensitivity === "aggressive";   onToggled: if (checked) culling.sensitivity = "aggressive"; font.pixelSize: 13 }
+                                RadioButton { text: "Custom";       checked: culling.sensitivity === "custom";       onToggled: if (checked) { culling.sensitivity = "custom"; culling.pushCustomThresholds() } font.pixelSize: 13 }
                             }
                             Text {
                                 width: parent.width - 8; wrapMode: Text.WordWrap
@@ -517,6 +555,8 @@ Item {
                                       ? "Conservative rejects only clearly bad frames — the fewest rejections."
                                       : culling.sensitivity === "aggressive"
                                       ? "Aggressive rejects anything measurably below the control — the most rejections."
+                                      : culling.sensitivity === "custom"
+                                      ? "Custom uses your own per-metric limits — edit them in the Thresholds panel."
                                       : "Balanced trades a good mix of sensitivity and false positives."
                                 color: culling.textMuted; font.pixelSize: 11
                             }
@@ -574,13 +614,57 @@ Item {
                                 Rectangle { width: parent.width; height: 1; color: culling.divider }
 
                                 Repeater {
-                                    model: cullingService.thresholdTable(culling.sensitivity)
+                                    model: culling.sensitivity === "custom" ? [] : cullingService.thresholdTable(culling.sensitivity)
                                     delegate: Row {
                                         width: parent.width; height: 22
                                         required property var modelData
                                         Text { width: parent.width * 0.4; anchors.verticalCenter: parent.verticalCenter; text: modelData.label; color: culling.textSecondary; font.pixelSize: 12 }
                                         Text { width: parent.width * 0.25; anchors.verticalCenter: parent.verticalCenter; text: modelData.value; color: culling.textPrimary; font.pixelSize: 12; font.bold: true }
                                         Text { anchors.verticalCenter: parent.verticalCenter; text: modelData.reject; color: culling.textMuted; font.pixelSize: 11 }
+                                    }
+                                }
+
+                                Column {
+                                    width: parent.width
+                                    spacing: 6
+                                    visible: culling.sensitivity === "custom"
+
+                                    Text {
+                                        width: parent.width; wrapMode: Text.WordWrap
+                                        text: "Percent a frame may be worse than the control before it is borderline (OK ≤) or rejected (Reject >)."
+                                        color: culling.textMuted; font.pixelSize: 11
+                                    }
+
+                                    Repeater {
+                                        model: [
+                                            { label: "Star Count",      okKey: "custStarOk",   rejKey: "custStarReject" },
+                                            { label: "Star Brightness", okKey: "custBrightOk", rejKey: "custBrightReject" },
+                                            { label: "FWHM",            okKey: "custFwhmOk",   rejKey: "custFwhmReject" },
+                                            { label: "Eccentricity",    okKey: "custEccOk",    rejKey: "custEccReject" },
+                                            { label: "Noise",           okKey: "custNoiseOk",  rejKey: "custNoiseReject" }
+                                        ]
+                                        delegate: Row {
+                                            width: parent.width; height: 32; spacing: 6
+                                            required property var modelData
+                                            Text { width: parent.width * 0.30; anchors.verticalCenter: parent.verticalCenter; text: modelData.label; color: culling.textSecondary; font.pixelSize: 12 }
+                                            Text { anchors.verticalCenter: parent.verticalCenter; text: "OK ≤"; color: culling.textMuted; font.pixelSize: 11 }
+                                            SpinBox {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                implicitWidth: 88; height: 28
+                                                from: 0; to: 100
+                                                value: culling[modelData.okKey]
+                                                onValueModified: { culling[modelData.okKey] = value; culling.pushCustomThresholds() }
+                                            }
+                                            Text { anchors.verticalCenter: parent.verticalCenter; text: "% · Rej >"; color: culling.textMuted; font.pixelSize: 11 }
+                                            SpinBox {
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                implicitWidth: 88; height: 28
+                                                from: 0; to: 200
+                                                value: culling[modelData.rejKey]
+                                                onValueModified: { culling[modelData.rejKey] = value; culling.pushCustomThresholds() }
+                                            }
+                                            Text { anchors.verticalCenter: parent.verticalCenter; text: "%"; color: culling.textMuted; font.pixelSize: 11 }
+                                        }
                                     }
                                 }
                             }
@@ -604,6 +688,7 @@ Item {
                         enabled: cullingService.controlValid && culling.candidatePaths.length > 0 && !cullingService.batchAnalyzing
                         onClicked: {
                             culling.hasApplied = false
+                            if (culling.sensitivity === "custom") culling.pushCustomThresholds()
                             cullingService.analyzeBatch(culling.candidatePaths, culling.sensitivity, culling.enabledMetrics())
                             culling.step = 3
                         }
@@ -944,14 +1029,19 @@ Item {
                     anchors.horizontalCenter: parent.horizontalCenter
                     text: culling.hasApplied ? "Applied" : "Apply " + cullingService.rejectionCount + " Rejections"
                     highlighted: true
-                    enabled: !culling.hasApplied && cullingService.rejectionCount > 0
+                    enabled: !culling.hasApplied
+                             && (cullingService.rejectionCount > 0 || cullingService.unrejectionPaths().length > 0)
                     onClicked: {
-                        var paths = cullingService.rejectionPaths()
-                        for (var i = 0; i < paths.length; i++)
-                            organizer.writeSidecar(paths[i], true)
-                        culling.appliedCount = paths.length
+                        var rej = cullingService.rejectionPaths()
+                        var unrej = cullingService.unrejectionPaths()
+                        for (var i = 0; i < rej.length; i++)
+                            organizer.writeSidecar(rej[i], true)
+                        for (var j = 0; j < unrej.length; j++)
+                            organizer.writeSidecar(unrej[j], false)
+                        culling.appliedCount = rej.length
                         culling.hasApplied = true
-                        culling.rejectionsApplied(paths)
+                        culling.rejectionsApplied(rej)
+                        if (unrej.length > 0) culling.unrejectionsApplied(unrej)
                     }
                 }
             }

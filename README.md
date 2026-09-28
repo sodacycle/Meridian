@@ -201,7 +201,7 @@ Frame culling is the **Culling** tab of the Image Viewer (open the viewer, then 
 
 **Recommend a control image.** If you're unsure which frame is best, **Recommend for Me** scores the frames *compatible with the image you opened* — same target, filter, exposure, binning, gain, camera, and telescope — analysing them in parallel with a progress readout, and picks the sharpest, star-richest one (`usableStars × log(1 + flux/noise) / (FWHM × (1 + eccentricity))`). It scans only the matching set, never the whole library.
 
-**Analyze, review, apply.** With a control image set, choose which metrics to weigh and a sensitivity preset (**Conservative / Balanced / Aggressive** — which drive the threshold table), then **Analyze Frames** runs the same star analysis across every compatible frame in parallel and classifies each **PASS / BORDERLINE / REJECT** (or **INSUFFICIENT DATA**). The **Results** screen tallies the counts with a rejection-reason breakdown; **Review Rejected / Borderline** steps through those frames one at a time — each shown with your current Viewer stretch/denoise and its per-metric deviation from the control — with **Keep / Reject** overrides. **Apply** writes the approved rejections to `.mrj` sidecars, which appear immediately in the Viewer and Files tabs and persist on the next scan.
+**Analyze, review, apply.** With a control image set, choose which metrics to weigh and a sensitivity preset (**Conservative / Balanced / Aggressive**, or **Custom** for editable per-metric limits that persist between sessions), then **Analyze Frames** runs the same star analysis across every compatible frame in parallel and classifies each **PASS / BORDERLINE / REJECT** (or **INSUFFICIENT DATA**). The **Results** screen tallies the counts with a rejection-reason breakdown; **Review Rejected / Borderline** steps through those frames one at a time — each shown with your current Viewer stretch/denoise and its per-metric deviation from the control — with **Keep / Reject** overrides. **Apply** writes the approved rejections to `.mrj` sidecars (and clears the mark on any you kept), which appear immediately in the Viewer and Files tabs and persist on the next scan.
 
 Star detection runs entirely in C++ (no external astrometry library): iterative sigma-clipped background estimation, connected-component source extraction above `background + 5σ` with footprint and edge filtering, and a second-moment ellipse fit for FWHM and eccentricity. Colour (Bayer/OSC) frames are analysed on a superpixel-averaged luminance plane. If fewer than 50 usable stars are found, an advisory warning suggests choosing a different control frame.
 
@@ -215,7 +215,7 @@ Pre-built AppImages for Linux are available on the [Releases page](https://githu
 
 | Platform | Download |
 |---|---|
-| Linux x86-64 | [Meridian-x86_64.AppImage Version: 1.0.3.1](https://github.com/sodacycle/Meridian/releases/download/1.0.3.1/Meridian-x86_64.AppImage) |
+| Linux x86-64 | [Meridian-x86_64.AppImage Version: 1.0.4a](https://github.com/sodacycle/Meridian/releases/download/1.0.4a/Meridian-x86_64.AppImage) |
 
 > **Dev vs. Release builds** — the **Dev** build (latest `master`) always contains the most recent changes and newest features, but may be in flux. **Release** builds (tagged on the Releases page) are more stable and feature-complete. Choose a Release build for everyday use; use the Dev build to try the latest work in progress.
 

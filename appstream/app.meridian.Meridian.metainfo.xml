@@ -55,9 +55,9 @@
   </keywords>
 
   <releases>
-    <release version="1.0.3.1" date="2026-09-26">
+    <release version="1.0.4a" date="2026-09-26">
       <description>
-        <p>Redesigned Image Viewer as a tabbed workspace (Viewer, Files, Culling, Settings) with a browsable .fit file list and a persisted Settings tab. New Frame Culling (Auto-Sort) workflow: analyze or recommend a control image, batch-classify compatible frames as Pass/Borderline/Reject, review, and apply rejections. AppImage launch fix. Version bump to 1.0.3.1.</p>
+        <p>Redesigned Image Viewer as a tabbed workspace (Viewer, Files, Culling, Settings) with a browsable .fit file list and a persisted Settings tab. New Frame Culling (Auto-Sort) workflow: analyze or recommend a control image, batch-classify compatible frames as Pass/Borderline/Reject, review, and apply rejections. AppImage launch fix. Version bump to 1.0.4a.</p>
       </description>
     </release>
     <release version="1.0.3a" date="2026-06-22">

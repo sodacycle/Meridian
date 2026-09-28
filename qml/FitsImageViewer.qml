@@ -98,7 +98,9 @@ Window {
     signal requestPrevious()
     signal requestNext()
     signal requestOpenPath(string path)
+    signal requestOpenInList(string path, var paths)
     signal rejectionsApplied(var paths)
+    signal unrejectionsApplied(var paths)
 
     function openFile(path) {
         filePath  = path
@@ -727,6 +729,7 @@ Window {
             stretchP:      viewer.stretchP
             denoiseRadius: viewer.denoiseRadius
             onRejectionsApplied: function(paths) { viewer.rejectionsApplied(paths) }
+            onUnrejectionsApplied: function(paths) { viewer.unrejectionsApplied(paths) }
         }
 
         FileListView {
@@ -735,7 +738,7 @@ Window {
             paths:       viewer.fitsFilePaths
             currentPath: viewer.filePath
             rejectedSet: viewer.rejectedSet
-            onOpenRequested: function(path) { viewer.requestOpenPath(path) }
+            onOpenRequested: function(path) { viewer.requestOpenInList(path, viewer.fitsFilePaths) }
             onRefreshRequested: viewer.refreshFileList()
         }
 
