@@ -228,8 +228,11 @@ Item {
         id: controlScreen
 
         ScrollView {
+            id: controlScroll
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+            readonly property real previewH: Math.max(300, height - 320)
 
             Column {
                 width: culling.width
@@ -254,7 +257,7 @@ Item {
 
                     Rectangle {
                         width: (parent.width - 16) * 0.5
-                        height: 300
+                        height: controlScroll.previewH
                         color: "#111111"
                         border.color: culling.divider; border.width: 1
                         radius: 6
@@ -364,7 +367,7 @@ Item {
 
                     Rectangle {
                         width: (parent.width - 16) * 0.5
-                        height: 300
+                        height: controlScroll.previewH
                         color: culling.card
                         border.color: culling.divider; border.width: 1
                         radius: 6
@@ -832,9 +835,11 @@ Item {
         id: reviewFrameScreen
 
         ScrollView {
+            id: reviewScroll
             clip: true
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
+            readonly property real previewH: Math.max(300, height - 160)
             readonly property bool isReject: culling.reviewMode === "rejected"
             readonly property int frameCount: culling.reviewFrames.length
             readonly property var entry: (frameCount > 0 && culling.reviewIndex < frameCount) ? culling.reviewFrames[culling.reviewIndex] : null
@@ -873,7 +878,7 @@ Item {
 
                     Rectangle {
                         width: (parent.width - 16) * 0.55
-                        height: 300
+                        height: reviewScroll.previewH
                         color: "#111111"; border.color: culling.divider; border.width: 1; radius: 6
                         clip: true
 
@@ -894,7 +899,7 @@ Item {
 
                     Rectangle {
                         width: (parent.width - 16) * 0.45
-                        height: 300
+                        height: reviewScroll.previewH
                         color: culling.card; border.color: culling.divider; border.width: 1; radius: 6
 
                         Column {
