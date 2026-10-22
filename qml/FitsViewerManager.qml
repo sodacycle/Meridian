@@ -47,6 +47,10 @@ Item {
 
     property var viewedPaths: []
 
+    function resetThumbnailStrip() {
+        manager.viewedPaths = fitsViewer.filePath !== "" ? [fitsViewer.filePath] : []
+    }
+
     onDisplayRowsChanged: {
         var newSet = {}
         for (var i = 0; i < displayRows.length; i++) {
@@ -124,6 +128,7 @@ Item {
             fitsViewer.rejectedCount = Object.keys(manager.rejectedSet).length
             if (manager.rejectedSet[fitsViewer.filePath])
                 fitsViewer.isRejected = true
+            manager.resetThumbnailStrip()
         }
 
         onUnrejectionsApplied: function(paths) {

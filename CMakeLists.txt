@@ -16,7 +16,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Quick QuickControls2 Network Concurrent Positioning)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Quick QuickControls2 Network Concurrent Positioning Sql)
 
 # Adopt the modern Qt QML policies to silence the configure-time author warnings:
 # QTP0001 -> the ":/qt/qml/Meridian/..." resource prefix, QTP0004 -> auto-generated
@@ -56,6 +56,7 @@ qt_add_executable(Meridian WIN32
     src/wikiservice.h             src/wikiservice.cpp
     src/seestarservice.h          src/seestarservice.cpp
     src/exportservice.h           src/exportservice.cpp
+    src/sessionstore.h            src/sessionstore.cpp
 )
 
 qt_add_qml_module(Meridian
@@ -96,6 +97,7 @@ target_link_libraries(Meridian PRIVATE
     Qt6::Network
     Qt6::Concurrent
     Qt6::Positioning
+    Qt6::Sql
 )
 
 install(TARGETS Meridian

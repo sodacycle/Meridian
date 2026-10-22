@@ -90,7 +90,7 @@ void FileOrganizer::findFitsFiles(const QString &dir, QStringList &list)
 
 bool FileOrganizer::deleteFile(const QString &filePath)
 {
-    return QFile::remove(filePath);
+    return QFile::moveToTrash(filePath);
 }
 
 QString FileOrganizer::rejectFile(const QString &filePath)
@@ -318,14 +318,14 @@ void FileOrganizer::removeJpg(const QStringList &dirPaths)
                 return {{"canceled", true}, {"deletedCount", deletedCount}, {"operation", "removeJpg"}};
             }
 
-            if (QFile::remove(jpgFiles[i])) {
+            if (QFile::moveToTrash(jpgFiles[i])) {
                 deletedCount++;
-                emit fileProcessed(jpgFiles[i] + " - Deleted");
+                emit fileProcessed(jpgFiles[i] + " - Moved to Trash");
             }
 
             if (i % 10 == 0) {
                 m_progressCurrent = i;
-                m_statusText = QString("Deleting JPGs (%1/%2)...").arg(i).arg(jpgFiles.size());
+                m_statusText = QString("Moving JPGs to Trash (%1/%2)...").arg(i).arg(jpgFiles.size());
                 emit progressChanged();
             }
         }
@@ -334,7 +334,7 @@ void FileOrganizer::removeJpg(const QStringList &dirPaths)
         emit progressChanged();
 
         return {{"success", true}, {"deletedCount", deletedCount}, {"operation", "removeJpg"},
-                {"message", QString("Deleted %1 JPG file(s).").arg(deletedCount)}};
+                {"message", QString("Moved %1 JPG file(s) to Trash.").arg(deletedCount)}};
     });
 
     watcher->setFuture(future);

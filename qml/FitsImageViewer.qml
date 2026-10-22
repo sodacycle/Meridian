@@ -47,6 +47,8 @@ Window {
     property var fitsFilePaths: []
     property var displayRows: []
     property var compatiblePaths: matchingPaths(filePath, displayRows)
+    property var compatibleCoords: matchCoords(filePath, displayRows)
+    property string currentTarget: targetOf(filePath, displayRows)
 
     onActiveSectionChanged: if (activeSection === 1) refreshFileList()
 
@@ -77,6 +79,42 @@ Window {
             if (same) {
                 var p = row["Path"] || ""
                 if (p !== "") out.push(p)
+            }
+        }
+        return out
+    }
+
+    function targetOf(path, rows) {
+        if (path === "" || !rows) return ""
+        for (var i = 0; i < rows.length; i++)
+            if ((rows[i]["Path"] || "") === path) return rows[i]["Target"] || ""
+        return ""
+    }
+
+    function matchCoords(path, rows) {
+        var out = ({})
+        if (path === "" || !rows || rows.length === 0) return out
+        var selected = null
+        for (var i = 0; i < rows.length; i++) {
+            if ((rows[i]["Path"] || "") === path) { selected = rows[i]; break }
+        }
+        if (!selected) return out
+
+        var keys = ["Target", "Filter Used", "Exposure Time s", "Binning", "Gain", "Camera Model", "Telescope"]
+        for (var j = 0; j < rows.length; j++) {
+            var row = rows[j]
+            var same = true
+            for (var k = 0; k < keys.length; k++) {
+                var a = row[keys[k]] === undefined ? "" : row[keys[k]]
+                var b = selected[keys[k]] === undefined ? "" : selected[keys[k]]
+                if (String(a) !== String(b)) { same = false; break }
+            }
+            if (same) {
+                var p = row["Path"] || ""
+                var ra = parseFloat(row["RA"])
+                var dec = parseFloat(row["DEC"])
+                if (p !== "" && isFinite(ra) && isFinite(dec))
+                    out[p] = { ra: ra, dec: dec }
             }
         }
         return out
@@ -725,6 +763,8 @@ Window {
             anchors.fill: parent
             visible: viewer.activeSection === 2
             candidatePaths: viewer.compatiblePaths
+            candidateCoords: viewer.compatibleCoords
+            targetName:      viewer.currentTarget
             stretchA:      viewer.stretchA
             stretchP:      viewer.stretchP
             denoiseRadius: viewer.denoiseRadius

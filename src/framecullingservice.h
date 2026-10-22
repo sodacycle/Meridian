@@ -6,6 +6,7 @@
 #include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QList>
 #include <QFutureWatcher>
 
 #include "starfinder.h"
@@ -77,12 +78,14 @@ public:
     Q_INVOKABLE void    recommendControlImage(const QStringList &candidatePaths);
     Q_INVOKABLE void    analyzeBatch(const QStringList &candidatePaths,
                                      const QString &sensitivity,
-                                     const QStringList &enabledMetrics);
+                                     const QStringList &enabledMetrics,
+                                     const QVariantList &panelIds = QVariantList());
     Q_INVOKABLE void    setFrameDecision(int index, const QString &decision);
     Q_INVOKABLE QStringList  rejectionPaths() const;
     Q_INVOKABLE QStringList  unrejectionPaths() const;
     Q_INVOKABLE QVariantList thresholdTable(const QString &sensitivity) const;
     Q_INVOKABLE void         setCustomThresholds(const QVariantMap &thresholds);
+    Q_INVOKABLE void         clearBatch();
 
 signals:
     void analyzingChanged();
@@ -120,6 +123,7 @@ private:
     QStringList  m_enabledMetrics;
     QVariantMap  m_customThresholds;
     QVariantList m_batchResults;
+    QList<int>   m_panelIds;
     QVariantList m_rejectionReasons;
     int          m_passCount = 0;
     int          m_borderlineCount = 0;

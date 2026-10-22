@@ -1,5 +1,7 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Window
+import QtCore
 
 ApplicationWindow {
     id: window
@@ -8,7 +10,7 @@ ApplicationWindow {
     height: 1000
     minimumWidth: 800
     minimumHeight: 600
-    visible: true
+    visible: false
 
     color: palette.window
 
@@ -66,13 +68,13 @@ ApplicationWindow {
                     text: "Session History (CSV)…"
                     enabled: exportService.hasData
                     property string tip: "Save every scanned FITS file's metadata as a CSV file."
-                    onTriggered: exportService.exportSessionHistoryCsv()
+                    onTriggered: exportService.exportSessionHistoryCsv(window.fullMetadataList)
                 }
                 Action {
                     text: "Report (HTML)…"
                     enabled: exportService.hasData
                     property string tip: "Save a printable HTML report of the target summary and session history."
-                    onTriggered: exportService.exportReportHtml()
+                    onTriggered: exportService.exportReportHtml(window.fullMetadataList)
                 }
             }
             MenuSeparator {}
@@ -265,7 +267,7 @@ ApplicationWindow {
             }
             Action {
                 text: "Delete Selected File…"
-                property string tip: "Permanently delete the selected file from disk."
+                property string tip: "Move the selected file to the Trash."
                 enabled: fileDetailsView.selectedFilePath !== ""
                 onTriggered: menuDeleteFileDialog.open()
             }
@@ -332,7 +334,7 @@ ApplicationWindow {
             spacing: 10; width: 420
             Text {
                 width: parent.width
-                text: "Permanently delete:\n" + fileDetailsView.selectedFileName
+                text: "Move to Trash:\n" + fileDetailsView.selectedFileName
                 color: window.sysPal.windowText
                 wrapMode: Text.WordWrap; font.pixelSize: 13
             }
@@ -343,8 +345,8 @@ ApplicationWindow {
                 font.pixelSize: 11; wrapMode: Text.WrapAnywhere
             }
             Text {
-                text: "This action cannot be undone."
-                color: "#cc3300"; font.pixelSize: 13; font.bold: true
+                text: "The file is sent to your system Trash and can be restored from there."
+                color: window.sysPal.windowText; opacity: 0.8; font.pixelSize: 12
             }
         }
 
@@ -371,19 +373,19 @@ ApplicationWindow {
             width: 380
             Text {
                 width: parent.width
-                text: "Permanently delete " + controlsPanel.jpgCount +
-                      " JPG file(s) from " + scanner.directories.length + " folder(s)."
+                text: "Move " + controlsPanel.jpgCount +
+                      " JPG file(s) from " + scanner.directories.length + " folder(s) to the Trash."
                 color: window.sysPal.windowText
                 wrapMode: Text.WordWrap; font.pixelSize: 13
             }
             Text {
-                text: "This action cannot be undone."
-                color: "#cc3300"; font.pixelSize: 13; font.bold: true
+                text: "The files are sent to your system Trash and can be restored from there."
+                color: window.sysPal.windowText; opacity: 0.8; font.pixelSize: 12
             }
         }
 
         onAccepted: {
-            controlsPanel.logToConsole("Deleting " + controlsPanel.jpgCount + " JPG file(s)…")
+            controlsPanel.logToConsole("Moving " + controlsPanel.jpgCount + " JPG file(s) to Trash…")
             organizer.removeJpg(scanner.directories)
         }
     }
@@ -413,10 +415,10 @@ ApplicationWindow {
                 anchors.right:   parent.right
                 anchors.margins: 12
                 onJpgScanned: function(rows) {
-                    fileDetailsView.allRows = rows
+                    fileDetailsView.setJpgRows(rows)
                 }
                 onJpgCleared: {
-                    fileDetailsView.allRows = window.fullMetadataList
+                    fileDetailsView.showFits()
                     imagingCalendar.activeCatalogFilter = ""
                     imagingCalendar.activeTargetFilter  = ""
                     imagingCalendar.buildCalendar(window.fullMetadataList)
@@ -582,16 +584,265 @@ ApplicationWindow {
     FitsViewerManager {
         id: viewerManager
         transientParent:    window
-        displayRows:        fileDetailsView.displayRows
+        displayRows:        window.fullMetadataList
         onRemoveRowRequested: function(path) { fileDetailsView.removeRow(path) }
     }
 
-    Component.onCompleted: {
+    function addSeestarDirIfPresent() {
         if (seestarService.hasMyWorks) {
             var myWorksPath = seestarService.mountPath + "/MyWorks"
             if (scanner.directories.indexOf(myWorksPath) === -1) {
                 scanner.addDirectory(myWorksPath)
                 window.seestarAutoAddedPath = myWorksPath
+            }
+        }
+    }
+
+    function startupAfterConsent() {
+        window.visible = true
+        window.raise()
+        window.requestActivate()
+        locationService.requestLocation()
+        if (sessionStore.hasSession)
+            resumeDialog.open()
+        else
+            window.addSeestarDirIfPresent()
+    }
+
+    Settings {
+        id: consentSettings
+        category: "firstRun"
+        property bool consentAccepted: false
+    }
+
+    Component.onCompleted: {
+        if (consentSettings.consentAccepted)
+            window.startupAfterConsent()
+        else
+            consentWindow.show()
+    }
+
+    Window {
+        id: consentWindow
+        title: "Welcome to Meridian — Access & Privacy"
+        width: 660
+        height: 660
+        minimumWidth: 540
+        minimumHeight: 520
+        flags: Qt.Dialog
+        modality: Qt.ApplicationModal
+        color: window.sysPal.window
+
+        property bool proceeding: false
+
+        onVisibleChanged: {
+            if (visible) {
+                x = Math.round(Screen.virtualX + (Screen.width  - width)  / 2)
+                y = Math.round(Screen.virtualY + (Screen.height - height) / 2)
+            }
+        }
+
+        onClosing: function(cl) {
+            if (!consentWindow.proceeding)
+                declineWindow.show()
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: window.sysPal.window
+
+            Text {
+                id: consentTitle
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 20
+                text: "Before you begin"
+                font.pixelSize: 20; font.bold: true
+                color: window.sysPal.windowText
+                wrapMode: Text.WordWrap
+            }
+
+            Flickable {
+                id: consentFlick
+                anchors.top: consentTitle.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: consentButtons.top
+                anchors.margins: 20
+                anchors.topMargin: 12
+                clip: true
+                contentWidth: width
+                contentHeight: consentText.implicitHeight
+                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+                Text {
+                    id: consentText
+                    width: consentFlick.width
+                    color: window.sysPal.windowText
+                    font.pixelSize: 13
+                    lineHeight: 1.3
+                    wrapMode: Text.WordWrap
+                    textFormat: Text.StyledText
+                    text:
+                        "Meridian is a local astrophotography session manager. It runs on your computer and keeps your image data on your machine. Please review how it uses your internet connection and your files before continuing.<br><br>" +
+
+                        "<b>Internet access</b><br>" +
+                        "Meridian connects to the internet only to enrich your sessions, and only over secure (HTTPS) connections. No account, sign-in, analytics, advertising, or usage tracking is involved, and your image files are never uploaded. It contacts these services:<br>" +
+                        "&nbsp;&nbsp;•&nbsp; <b>Location</b> — your device's position service, with a fallback to an IP-based lookup (ipinfo.io), to determine your observing location for weather and planning.<br>" +
+                        "&nbsp;&nbsp;•&nbsp; <b>Weather</b> — Open-Meteo, to fetch past and forecast sky conditions for your location and imaging dates.<br>" +
+                        "&nbsp;&nbsp;•&nbsp; <b>Light pollution</b> — lightpollutionmap.info, to look up the Bortle/SQM value at your coordinates.<br>" +
+                        "&nbsp;&nbsp;•&nbsp; <b>Object info</b> — Wikipedia, only when you open a catalog object, to show a thumbnail and summary.<br>" +
+                        "Only your approximate coordinates and (for Wikipedia) the object name are sent — never your files or personal information. If you stay offline, Meridian still works; these features simply show no data.<br><br>" +
+
+                        "<b>Files and folders</b><br>" +
+                        "Meridian only touches folders you explicitly add to the scan list, plus a small settings/database area in your user profile:<br>" +
+                        "&nbsp;&nbsp;•&nbsp; <b>Reads</b> the FITS (.fit/.fits) and JPG files in the folders you add, to extract their headers and show previews. Scanning never changes your originals.<br>" +
+                        "&nbsp;&nbsp;•&nbsp; <b>Writes</b> small rejection sidecar files (<i>.mrj</i>) next to frames you cull, and saves your scanned session to a local database and your preferences in your user application-data directory.<br>" +
+                        "&nbsp;&nbsp;•&nbsp; <b>Organizes</b> files only when you ask — the Advanced Tools can move, rename, or send files to your system Trash. Deletions go to the Trash (recoverable), and every destructive action asks for confirmation first.<br><br>" +
+
+                        "<b>How Meridian was built</b><br>" +
+                        "Meridian was designed and developed with the assistance of <b>Claude</b>, an AI assistant made by Anthropic. Working under the direction of the project's author, Claude helped with its creation in the following ways:<br>" +
+                        "&nbsp;&nbsp;•&nbsp; Writing, refactoring, and reviewing the C++ and QML source code.<br>" +
+                        "&nbsp;&nbsp;•&nbsp; Shaping the application's architecture and features — among them the multi-folder FITS scanner, the image viewer and frame-culling pipeline, the observation planner and sky visualisations, the imaging calendar, and the session database and resume behaviour.<br>" +
+                        "&nbsp;&nbsp;•&nbsp; Optimising performance and memory use, and building the Linux packaging (AppImage).<br>" +
+                        "&nbsp;&nbsp;•&nbsp; Writing the documentation and reviewing the code for security and correctness.<br>" +
+                        "Every change was directed, reviewed, and accepted by the project's author, who remains responsible for the software.<br><br>" +
+
+                        "By choosing <b>Agree &amp; Continue</b> you consent to the internet and file access described above. You can revisit this summary any time on the project's documentation."
+                }
+            }
+
+            Row {
+                id: consentButtons
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                anchors.margins: 20
+                spacing: 10
+
+                Button {
+                    text: "I Do Not Agree — Close"
+                    onClicked: consentWindow.close()
+                }
+                Button {
+                    text: "Agree & Continue"
+                    highlighted: true
+                    onClicked: {
+                        consentWindow.proceeding = true
+                        consentSettings.consentAccepted = true
+                        window.startupAfterConsent()
+                        consentWindow.close()
+                    }
+                }
+            }
+        }
+    }
+
+    Window {
+        id: declineWindow
+        title: "Meridian — Cannot Continue"
+        width: 460
+        height: 300
+        flags: Qt.Dialog
+        modality: Qt.ApplicationModal
+        color: window.sysPal.window
+
+        onVisibleChanged: {
+            if (visible) {
+                x = Math.round(Screen.virtualX + (Screen.width  - width)  / 2)
+                y = Math.round(Screen.virtualY + (Screen.height - height) / 2)
+            }
+        }
+
+        onClosing: Qt.quit()
+
+        Rectangle {
+            anchors.fill: parent
+            color: window.sysPal.window
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 24
+                spacing: 16
+
+                Text {
+                    width: parent.width
+                    text: "Meridian will now close"
+                    font.pixelSize: 18; font.bold: true
+                    color: window.sysPal.windowText
+                    wrapMode: Text.WordWrap
+                }
+                Text {
+                    width: parent.width
+                    text: "Meridian needs the file access described on the previous screen to scan and manage your "
+                        + "image sessions, and it cannot run without it. The internet features are optional, but "
+                        + "the application cannot continue until you accept the access terms.\n\n"
+                        + "Nothing has been changed on your system. You can launch Meridian again at any time to review the terms."
+                    color: window.sysPal.windowText
+                    font.pixelSize: 13; lineHeight: 1.3
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            Button {
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                anchors.margins: 24
+                text: "OK"
+                highlighted: true
+                onClicked: Qt.quit()
+            }
+        }
+    }
+
+    Dialog {
+        id: resumeDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        title: "Resume Previous Session"
+
+        Column {
+            spacing: 12
+            width: 420
+
+            Text {
+                width: parent.width
+                text: "A saved session was found with " + sessionStore.fileCount
+                      + " file(s) across " + sessionStore.directoryCount + " folder(s)"
+                      + (sessionStore.lastScanText.length > 0
+                            ? ", last scanned " + sessionStore.lastScanText + "." : ".")
+                color: window.sysPal.windowText
+                wrapMode: Text.WordWrap; font.pixelSize: 13
+            }
+            Text {
+                width: parent.width
+                text: "Resume to reload it instantly. Start fresh to clear it and scan from scratch. "
+                    + "When you resume, scanning a saved folder only reads new or changed files."
+                color: window.sysPal.windowText
+                wrapMode: Text.WordWrap; font.pixelSize: 12; opacity: 0.8
+            }
+            Row {
+                spacing: 8
+                anchors.right: parent.right
+
+                Button {
+                    text: "Start Fresh"
+                    onClicked: {
+                        sessionStore.startFresh()
+                        window.addSeestarDirIfPresent()
+                        resumeDialog.close()
+                    }
+                }
+                Button {
+                    text: "Resume Session"
+                    onClicked: {
+                        scanner.loadSession()
+                        window.addSeestarDirIfPresent()
+                        resumeDialog.close()
+                    }
+                }
             }
         }
     }
@@ -620,8 +871,8 @@ ApplicationWindow {
             window.fullMetadataList = metaList
             window.scanCompleted    = true
             controlsPanel.setStatus("Found " + metaList.length + " FITS files.")
-            fileDetailsView.allRows = metaList
-            imagingCalendar.buildCalendar(metaList)
+            fileDetailsView.showFits()
+            imagingCalendar.buildCalendar(window.fullMetadataList)
         }
         function onScanError(error) {
             controlsPanel.setStatus("Scan error: " + error)

@@ -7,67 +7,99 @@ MetadataTableModel::MetadataTableModel(QObject *parent) : QAbstractListModel(par
 int MetadataTableModel::rowCount(const QModelIndex &parent) const
 {
     if (parent.isValid()) return 0;
-    return m_rows.size();
+    return static_cast<int>(m_view.size());
 }
 
 QHash<int, QByteArray> MetadataTableModel::roleNames() const
 {
     return {
-        {ValueRole, "value"},
-        {ColumnNameRole, "columnName"}
+        {RowRole, "rowData"}
     };
 }
 
 QVariant MetadataTableModel::data(const QModelIndex &index, int role) const
 {
-    if (!index.isValid() || index.row() >= m_rows.size())
+    if (!index.isValid() || index.row() >= m_view.size())
         return {};
-
-    if (role == ColumnNameRole)
-        return m_columns.value(index.column());
-
-    const auto &row = m_rows[index.row()];
-    if (role == ValueRole || role == Qt::DisplayRole) {
-        QString col = m_columns.value(index.column());
-        return row.value(col);
-    }
-
+    if (role == RowRole || role == Qt::DisplayRole)
+        return m_allRows.at(m_view.at(index.row()));
     return {};
 }
 
 void MetadataTableModel::setData(const QVariantList &rows, const QStringList &columns)
 {
     beginResetModel();
-    m_rows.clear();
     m_columns = columns;
+    m_allRows.clear();
+    m_allRows.reserve(rows.size());
     for (const auto &r : rows)
-        m_rows.append(r.toMap());
+        m_allRows.append(r.toMap());
+    m_view.resize(m_allRows.size());
+    for (int i = 0; i < m_allRows.size(); ++i)
+        m_view[i] = i;
+    applySort();
     endResetModel();
+    emit viewChanged();
 }
 
 void MetadataTableModel::clear()
 {
     beginResetModel();
-    m_rows.clear();
+    m_allRows.clear();
+    m_view.clear();
     m_columns.clear();
+    m_sortColumn.clear();
+    endResetModel();
+    emit viewChanged();
+}
+
+void MetadataTableModel::applySort()
+{
+    if (m_sortColumn.isEmpty())
+        return;
+    const QString col = m_sortColumn;
+    const bool asc = m_sortAscending;
+    std::stable_sort(m_view.begin(), m_view.end(), [&](int a, int b) {
+        const QString va = m_allRows.at(a).value(col).toString();
+        const QString vb = m_allRows.at(b).value(col).toString();
+        bool ok1 = false, ok2 = false;
+        const double na = va.toDouble(&ok1);
+        const double nb = vb.toDouble(&ok2);
+        bool less = (ok1 && ok2) ? (na < nb)
+                                 : (va.compare(vb, Qt::CaseInsensitive) < 0);
+        return asc ? less : !less;
+    });
+}
+
+void MetadataTableModel::sortByColumn(const QString &column, bool ascending)
+{
+    m_sortColumn = column;
+    m_sortAscending = ascending;
+    beginResetModel();
+    applySort();
     endResetModel();
 }
 
-void MetadataTableModel::filterByCatalog(const QString &catalog,
-                                          const QVariantList &allRows,
-                                          const QStringList &columns)
+void MetadataTableModel::rebuildView(const std::function<bool(const QVariantMap &)> &keep)
 {
     beginResetModel();
-    m_columns = columns;
-    m_rows.clear();
+    m_view.clear();
+    for (int i = 0; i < m_allRows.size(); ++i) {
+        if (!keep || keep(m_allRows.at(i)))
+            m_view.append(i);
+    }
+    applySort();
+    endResetModel();
+    emit viewChanged();
+}
 
-    auto matchesCatalog = [&](const QString &target) -> bool {
-        QString name = target.toUpper().trimmed();
+void MetadataTableModel::filterByCatalog(const QString &catalog)
+{
+    auto matchesCatalog = [catalog](const QVariantMap &row) -> bool {
+        QString name = row.value("Target").toString().toUpper().trimmed();
         name.remove("MOSAIC").remove("PANEL").replace("-", " ");
         name = name.simplified();
-
         auto starts = [&](const QString &prefix) { return name.startsWith(prefix); };
-
         if (catalog == "Messier") return starts("M ");
         if (catalog == "NGC") return starts("NGC");
         if (catalog == "IC") return starts("IC");
@@ -87,32 +119,45 @@ void MetadataTableModel::filterByCatalog(const QString &catalog,
         }
         return false;
     };
-
-    for (const auto &r : allRows) {
-        QVariantMap row = r.toMap();
-        if (matchesCatalog(row.value("Target").toString()))
-            m_rows.append(row);
-    }
-    endResetModel();
+    rebuildView(matchesCatalog);
 }
 
-void MetadataTableModel::filterByTargetAndDate(const QString &target,
-                                                const QString &date,
-                                                const QVariantList &allRows,
-                                                const QStringList &columns)
+void MetadataTableModel::filterByTarget(const QString &target)
 {
-    beginResetModel();
-    m_columns = columns;
-    m_rows.clear();
+    rebuildView([target](const QVariantMap &row) {
+        return row.value("Target").toString() == target;
+    });
+}
 
-    for (const auto &r : allRows) {
-        QVariantMap row = r.toMap();
-        QString startTime = row.value("Start Time UTC").toString();
-        QString itemDate = startTime.left(10);
-        if (row.value("Target").toString() == target && itemDate == date)
-            m_rows.append(row);
+void MetadataTableModel::filterByTargetAndDate(const QString &target, const QString &date)
+{
+    rebuildView([target, date](const QVariantMap &row) {
+        return row.value("Target").toString() == target
+            && row.value("Start Time UTC").toString().left(10) == date;
+    });
+}
+
+void MetadataTableModel::showAll()
+{
+    rebuildView(nullptr);
+}
+
+void MetadataTableModel::removeByPath(const QString &path)
+{
+    int found = -1;
+    for (int i = 0; i < m_allRows.size(); ++i) {
+        if (m_allRows.at(i).value("Path").toString() == path) { found = i; break; }
     }
+    if (found < 0)
+        return;
+    beginResetModel();
+    m_allRows.removeAt(found);
+    m_view.clear();
+    for (int i = 0; i < m_allRows.size(); ++i)
+        m_view.append(i);
+    applySort();
     endResetModel();
+    emit viewChanged();
 }
 
 TargetSummaryModel::TargetSummaryModel(QObject *parent) : QAbstractListModel(parent) {}

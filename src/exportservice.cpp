@@ -7,24 +7,34 @@
 
 ExportService::ExportService(QObject *parent) : QObject(parent) {}
 
-void ExportService::setData(const QVariantList &metadata,
-                            const QStringList &columns,
-                            const QVariantList &targets)
+void ExportService::setSummary(const QStringList &columns, const QVariantList &targets)
 {
-    m_metadata = metadata;
-    m_columns  = columns;
-    m_targets  = targets;
+    m_columns = columns;
+    m_targets = targets;
     emit dataChanged();
+}
+
+static bool startsFormula(const QString &value)
+{
+    if (value.isEmpty())
+        return false;
+    const QChar c = value.at(0);
+    if (c == '=' || c == '+' || c == '@' || c == '\t' || c == '\r')
+        return true;
+    if (c == '-')
+        return value.size() < 2 || !(value.at(1).isDigit() || value.at(1) == '.');
+    return false;
 }
 
 static QString csvField(const QString &value)
 {
-    if (value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r')) {
-        QString escaped = value;
+    QString field = startsFormula(value) ? QStringLiteral("'") + value : value;
+    if (field.contains(',') || field.contains('"') || field.contains('\n') || field.contains('\r')) {
+        QString escaped = field;
         escaped.replace('"', "\"\"");
         return '"' + escaped + '"';
     }
-    return value;
+    return field;
 }
 
 static QString csvRow(const QStringList &fields)
@@ -91,7 +101,7 @@ QString ExportService::exportTargetSummaryCsv()
     return writeFile(path, csv);
 }
 
-QString ExportService::exportSessionHistoryCsv()
+QString ExportService::exportSessionHistoryCsv(const QVariantList &metadata)
 {
     const QString path = QFileDialog::getSaveFileName(
         nullptr, "Export Session History (CSV)", "meridian-session-history.csv",
@@ -100,7 +110,7 @@ QString ExportService::exportSessionHistoryCsv()
         return QString();
 
     QString csv = csvRow(m_columns);
-    for (const QVariant &v : m_metadata) {
+    for (const QVariant &v : metadata) {
         const QVariantMap row = v.toMap();
         QStringList fields;
         for (const QString &col : m_columns)
@@ -129,7 +139,7 @@ static QString htmlTable(const QStringList &columns, const QVariantList &rows)
     return html;
 }
 
-QString ExportService::exportReportHtml()
+QString ExportService::exportReportHtml(const QVariantList &metadata)
 {
     const QString path = QFileDialog::getSaveFileName(
         nullptr, "Export Report (HTML)", "meridian-report.html",
@@ -166,7 +176,7 @@ QString ExportService::exportReportHtml()
 
     html += "<div class=\"stats\">"
             + QString::number(m_targets.size()) + " target(s) · "
-            + QString::number(m_metadata.size()) + " FITS file(s) · "
+            + QString::number(metadata.size()) + " FITS file(s) · "
             + QString::number(totalIntegration / 3600.0, 'f', 1) + " h total integration"
             + "</div>\n";
 
@@ -174,7 +184,7 @@ QString ExportService::exportReportHtml()
     html += htmlTable(kTargetColumns, m_targets);
 
     html += "<h2>Session History</h2>\n";
-    html += htmlTable(kReportHistoryColumns, m_metadata);
+    html += htmlTable(kReportHistoryColumns, metadata);
 
     html += "</body>\n</html>\n";
 

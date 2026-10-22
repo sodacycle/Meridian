@@ -23,11 +23,96 @@ Item {
         property alias custEccReject:    culling.custEccReject
         property alias custNoiseOk:      culling.custNoiseOk
         property alias custNoiseReject:  culling.custNoiseReject
+        property alias mosaicDecisions:  culling.mosaicDecisions
     }
 
     property int step: 1
     property string reviewMode: ""
     property var candidatePaths: []
+    property var candidateCoords: ({})
+    property string targetName: ""
+
+    property bool mosaicMode: false
+    property int  detectedPanels: 1
+    property var  panelOf: ({})
+    property string mosaicDecisions: "{}"
+
+    onCandidateCoordsChanged: culling.refreshMosaic()
+    onVisibleChanged: if (visible) culling.refreshMosaic()
+
+    function angSep(a, b) {
+        var dRa = Math.abs(a.ra - b.ra)
+        if (dRa > 180) dRa = 360 - dRa
+        var mdec = (a.dec + b.dec) / 2 * Math.PI / 180
+        var x = dRa * Math.cos(mdec)
+        var y = a.dec - b.dec
+        return Math.sqrt(x * x + y * y)
+    }
+
+    function computePanels() {
+        var tol = 0.2
+        var panels = []
+        var map = ({})
+        for (var i = 0; i < candidatePaths.length; i++) {
+            var p = candidatePaths[i]
+            var c = candidateCoords[p]
+            if (!c) { map[p] = -1; continue }
+            var best = -1, bestD = 1e9
+            for (var j = 0; j < panels.length; j++) {
+                var d = angSep(c, panels[j])
+                if (d < tol && d < bestD) { bestD = d; best = j }
+            }
+            if (best === -1) {
+                panels.push({ ra: c.ra, dec: c.dec, n: 1 })
+                best = panels.length - 1
+            } else {
+                var pn = panels[best]
+                pn.ra  = (pn.ra  * pn.n + c.ra)  / (pn.n + 1)
+                pn.dec = (pn.dec * pn.n + c.dec) / (pn.n + 1)
+                pn.n  += 1
+            }
+            map[p] = best
+        }
+        var significant = 0
+        for (var k = 0; k < panels.length; k++) if (panels[k].n >= 3) significant++
+        culling.panelOf = map
+        culling.detectedPanels = panels.length
+        return { count: panels.length, significant: significant }
+    }
+
+    function mosaicDecisionFor(target) {
+        if (target === "") return ""
+        try {
+            var m = JSON.parse(culling.mosaicDecisions || "{}")
+            if (m[target] === true)  return "yes"
+            if (m[target] === false) return "no"
+        } catch (e) {}
+        return ""
+    }
+
+    function setMosaicDecision(target, enabled) {
+        culling.mosaicMode = enabled
+        if (target === "") return
+        var m = {}
+        try { m = JSON.parse(culling.mosaicDecisions || "{}") } catch (e) { m = {} }
+        m[target] = enabled
+        culling.mosaicDecisions = JSON.stringify(m)
+    }
+
+    function refreshMosaic() {
+        var res = computePanels()
+        if (res.significant >= 2) {
+            var decided = mosaicDecisionFor(culling.targetName)
+            if (decided === "yes")      culling.mosaicMode = true
+            else if (decided === "no")  culling.mosaicMode = false
+            else if (culling.visible && !mosaicDialog.opened) {
+                mosaicDialog.panelCount = res.significant
+                mosaicDialog.open()
+            }
+        } else {
+            culling.mosaicMode = false
+        }
+    }
 
     property int reviewIndex: 0
     property var reviewFrames: filterReview(cullingService.batchResults, reviewMode)
@@ -80,9 +165,77 @@ Item {
     signal rejectionsApplied(var paths)
     signal unrejectionsApplied(var paths)
 
+    function resetCycle() {
+        resetTimer.stop()
+        culling.reviewMode   = ""
+        culling.reviewIndex  = 0
+        culling.hasApplied   = false
+        culling.appliedCount = 0
+        cullingService.clearBatch()
+        culling.step = 1
+    }
+
+    Timer {
+        id: resetTimer
+        interval: 1500
+        repeat: false
+        onTriggered: {
+            if (culling.hasApplied && culling.step === 4)
+                culling.resetCycle()
+        }
+    }
+
     Connections {
         target: cullingService
         function onBatchResultsChanged() { culling.hasApplied = false }
+    }
+
+    Dialog {
+        id: mosaicDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: "Mosaic Detected"
+
+        property int panelCount: 0
+
+        Column {
+            spacing: 12
+            width: 440
+
+            Text {
+                width: parent.width
+                text: "The matching frames for " + (culling.targetName !== "" ? "“" + culling.targetName + "”" : "this target")
+                      + " fall into " + mosaicDialog.panelCount + " separate pointings, so this looks like a mosaic."
+                color: culling.textPrimary
+                wrapMode: Text.WordWrap; font.pixelSize: 13
+            }
+            Text {
+                width: parent.width
+                text: "With mosaic-aware culling, Star Count and Brightness are judged against each panel's own frames (different panels cover different star fields), while FWHM, eccentricity, and noise are still compared to your control image. This avoids wrongly rejecting frames from sparser panels."
+                color: culling.textMuted
+                wrapMode: Text.WordWrap; font.pixelSize: 12
+            }
+            Text {
+                width: parent.width
+                text: "Your choice is remembered for this target. You can also toggle it on the Analyze screen."
+                color: culling.textMuted
+                wrapMode: Text.WordWrap; font.pixelSize: 11; opacity: 0.8
+            }
+            Row {
+                spacing: 8
+                anchors.right: parent.right
+                Button {
+                    text: "Treat as one field"
+                    onClicked: { culling.setMosaicDecision(culling.targetName, false); mosaicDialog.close() }
+                }
+                Button {
+                    text: "Enable Mosaic Culling"
+                    highlighted: true
+                    onClicked: { culling.setMosaicDecision(culling.targetName, true); mosaicDialog.close() }
+                }
+            }
+        }
     }
 
     function pushCustomThresholds() {
@@ -541,6 +694,19 @@ Item {
                             CheckBox { text: "Star Eccentricity"; checked: culling.mEccentricity; onToggled: culling.mEccentricity = checked; font.pixelSize: 13 }
                             CheckBox { text: "Background Noise";  checked: culling.mNoise;        onToggled: culling.mNoise = checked;        font.pixelSize: 13 }
 
+                            Rectangle { width: parent.width; height: 1; color: culling.divider; visible: culling.detectedPanels >= 2 }
+
+                            CheckBox {
+                                visible: culling.detectedPanels >= 2
+                                text: "Mosaic-aware (" + culling.detectedPanels + " panels)"
+                                checked: culling.mosaicMode
+                                onToggled: culling.setMosaicDecision(culling.targetName, checked)
+                                font.pixelSize: 13
+                                ToolTip.visible: hovered
+                                ToolTip.delay: 500
+                                ToolTip.text: "Judge Star Count and Brightness against each panel's own frames,\nsince mosaic panels cover different star fields. FWHM, eccentricity\nand noise are still compared to the control image."
+                            }
+
                             Rectangle { width: parent.width; height: 1; color: culling.divider }
 
                             Text { text: "Culling Sensitivity"; font.pixelSize: 14; font.bold: true; color: culling.textPrimary }
@@ -692,7 +858,14 @@ Item {
                         onClicked: {
                             culling.hasApplied = false
                             if (culling.sensitivity === "custom") culling.pushCustomThresholds()
-                            cullingService.analyzeBatch(culling.candidatePaths, culling.sensitivity, culling.enabledMetrics())
+                            var pids = []
+                            if (culling.mosaicMode) {
+                                for (var i = 0; i < culling.candidatePaths.length; i++) {
+                                    var pv = culling.panelOf[culling.candidatePaths[i]]
+                                    pids.push(pv === undefined ? -1 : pv)
+                                }
+                            }
+                            cullingService.analyzeBatch(culling.candidatePaths, culling.sensitivity, culling.enabledMetrics(), pids)
                             culling.step = 3
                         }
                     }
@@ -1047,6 +1220,7 @@ Item {
                         culling.hasApplied = true
                         culling.rejectionsApplied(rej)
                         if (unrej.length > 0) culling.unrejectionsApplied(unrej)
+                        resetTimer.restart()
                     }
                 }
             }

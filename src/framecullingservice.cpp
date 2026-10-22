@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QVariantMap>
 #include <QMap>
+#include <QHash>
 #include <QPair>
 #include <QtConcurrentRun>
 #include <QtConcurrentMap>
@@ -88,7 +89,9 @@ static QString statusHigh(double dev, double passLimit, double rejectLimit)
 static QVariantMap classifyFrame(const QString &path, const FrameQuality &q,
                                  const FrameQuality &control,
                                  const CullingThresholds &t,
-                                 const QStringList &enabled)
+                                 const QStringList &enabled,
+                                 double starBaseline,
+                                 double fluxBaseline)
 {
     QVariantMap frame;
     frame["path"]         = path;
@@ -110,10 +113,10 @@ static QVariantMap classifyFrame(const QString &path, const FrameQuality &q,
         ? (q.medianEccentricity - control.medianEccentricity) / control.medianEccentricity : 0.0;
     const double noiseDev = control.backgroundNoise > 0.0
         ? (q.backgroundNoise - control.backgroundNoise) / control.backgroundNoise : 0.0;
-    const double starRatio = control.usableStarCount > 0
-        ? static_cast<double>(q.usableStarCount) / control.usableStarCount : 1.0;
-    const double fluxRatio = control.medianStarFlux > 0.0
-        ? q.medianStarFlux / control.medianStarFlux : 1.0;
+    const double starRatio = starBaseline > 0.0
+        ? static_cast<double>(q.usableStarCount) / starBaseline : 1.0;
+    const double fluxRatio = fluxBaseline > 0.0
+        ? q.medianStarFlux / fluxBaseline : 1.0;
 
     const QString starStatus = starRatio < t.starReject ? "bad" : (starRatio < t.starPass ? "ok" : "good");
     const QString fluxStatus = fluxRatio < t.fluxReject ? "bad" : ((fluxRatio < t.fluxLow || fluxRatio > t.fluxHigh) ? "ok" : "good");
@@ -262,11 +265,19 @@ void FrameCullingService::onControlFinished()
 
 void FrameCullingService::analyzeBatch(const QStringList &candidatePaths,
                                        const QString &sensitivity,
-                                       const QStringList &enabledMetrics)
+                                       const QStringList &enabledMetrics,
+                                       const QVariantList &panelIds)
 {
     if (m_batchAnalyzing || m_recommending || m_analyzing
         || candidatePaths.isEmpty() || !m_controlQuality.valid)
         return;
+
+    m_panelIds.clear();
+    if (panelIds.size() == candidatePaths.size()) {
+        m_panelIds.reserve(panelIds.size());
+        for (const QVariant &v : panelIds)
+            m_panelIds.append(v.toInt());
+    }
 
     m_batchCandidates = candidatePaths;
     m_sensitivity     = sensitivity.isEmpty() ? QStringLiteral("balanced") : sensitivity;
@@ -302,9 +313,42 @@ void FrameCullingService::onBatchFinished()
         ? customThresholdsFrom(m_customThresholds)
         : thresholdsFor(m_sensitivity);
 
+    const bool mosaic = m_panelIds.size() == results.size();
+    QHash<int, double> panelStarBaseline;
+    QHash<int, double> panelFluxBaseline;
+    if (mosaic) {
+        QHash<int, QList<double>> stars;
+        QHash<int, QList<double>> flux;
+        for (int i = 0; i < results.size(); ++i) {
+            if (!results[i].valid || results[i].usableStarCount <= 0)
+                continue;
+            const int panel = m_panelIds[i];
+            stars[panel].append(results[i].usableStarCount);
+            flux[panel].append(results[i].medianStarFlux);
+        }
+        const auto median = [](QList<double> v) -> double {
+            if (v.isEmpty()) return 0.0;
+            std::sort(v.begin(), v.end());
+            const int n = v.size();
+            return (n % 2) ? v[n / 2] : 0.5 * (v[n / 2 - 1] + v[n / 2]);
+        };
+        for (auto it = stars.constBegin(); it != stars.constEnd(); ++it)
+            panelStarBaseline[it.key()] = median(it.value());
+        for (auto it = flux.constBegin(); it != flux.constEnd(); ++it)
+            panelFluxBaseline[it.key()] = median(it.value());
+    }
+
     for (int i = 0; i < results.size() && i < m_batchCandidates.size(); ++i) {
+        double starBaseline = m_controlQuality.usableStarCount;
+        double fluxBaseline = m_controlQuality.medianStarFlux;
+        if (mosaic) {
+            const int panel = m_panelIds[i];
+            if (panelStarBaseline.value(panel, 0.0) > 0.0) starBaseline = panelStarBaseline.value(panel);
+            if (panelFluxBaseline.value(panel, 0.0) > 0.0) fluxBaseline = panelFluxBaseline.value(panel);
+        }
         const QVariantMap frame = classifyFrame(m_batchCandidates[i], results[i], m_controlQuality,
-                                                thresholds, m_enabledMetrics);
+                                                thresholds, m_enabledMetrics,
+                                                starBaseline, fluxBaseline);
         const QString cls = frame["classification"].toString();
         if (cls == "PASS")            m_passCount++;
         else if (cls == "BORDERLINE") m_borderlineCount++;
@@ -343,6 +387,20 @@ void FrameCullingService::setFrameDecision(int index, const QString &decision)
     QVariantMap frame = m_batchResults[index].toMap();
     frame["decision"] = decision;
     m_batchResults[index] = frame;
+    emit batchResultsChanged();
+}
+
+void FrameCullingService::clearBatch()
+{
+    if (m_batchAnalyzing)
+        return;
+    m_batchCandidates.clear();
+    m_batchResults.clear();
+    m_rejectionReasons.clear();
+    m_passCount = 0;
+    m_borderlineCount = 0;
+    m_rejectCount = 0;
+    m_insufficientCount = 0;
     emit batchResultsChanged();
 }
 

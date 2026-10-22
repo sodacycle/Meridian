@@ -8,7 +8,9 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 
 ## Features
 
+- **First-Run Consent** — on first launch, a one-time Access & Privacy window explains the app's internet use (secure location/weather/light-pollution/Wikipedia lookups — no accounts, tracking, or uploads) and file access (reads only folders you add; writes `.mrj` sidecars, the session database, and preferences; deletions go to the Trash). The main window opens only after you agree; no network or location request is made beforehand.
 - **Multi-Folder FITS Scanner** — add any number of root directories; all are scanned in one pass with partial results appearing as each folder finishes. The progress bar shows each file's path as it is scanned, and hitting **Stop** keeps the data for everything scanned up to that point. No Python or external tools required.
+- **Session Database & Resume** — every scan is saved to a local SQLite database, so on the next launch Meridian offers to **resume** the previous session (reloading all data instantly, no rescan) or **start fresh**. Re-scanning a saved folder is **incremental**: unchanged files are skipped and only new or modified files are read, so large libraries refresh in a fraction of the time.
 - **Image Rejection Persistence** — rejection marks are saved as `.mrj` sidecar files next to your FITS files so culling work survives app restarts. Pre-populated automatically on the next scan.
 - **Target Summary** — aggregates sessions by target object, showing total exposure time, sub counts, filters used, and equipment.
 - **Calibration Summary** — separate view for bias, dark, and flat frames grouped by type and settings, linked to each light-frame session.
@@ -25,7 +27,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **Observed Sky Paths** — below the Catalog Breakdown, an altitude-vs-time sky-arc chart plots every observed target's altitude across tonight from its FITS RA/Dec, each target in its own colour, with twilight shading, altitude grid, and an hourly time axis. Click a target to highlight it and grey the rest.
 - **File Organiser** — batch tools for organising stacked files, scanning/deleting JPG previews, preparing Siril folder structures, and removing empty directories — all operating across all scan directories simultaneously.
 - **Export / Reports** — from **File → Export**, save the Target Summary or the full session history as **CSV**, or a self-contained **printable HTML report** (target summary + session history, styled for print) — after a scan.
-- **Frame Culling (Auto-Sort)** — the **Culling** tab of the Image Viewer flags subs measurably worse than a control image you choose. Pick a good sub — or let **Recommend for Me** score the frames matching your opened image and pick the best — then batch-analyze the compatible set at a chosen sensitivity (Conservative / Balanced / Aggressive), classify each frame **PASS / BORDERLINE / REJECT**, review and Keep/Reject individual frames, and apply the result. Star detection runs entirely in C++ (no external astrometry). Nothing is rejected without your approval, and Apply reuses the existing `.mrj` rejection mechanism.
+- **Frame Culling (Auto-Sort)** — the **Culling** tab of the Image Viewer flags subs measurably worse than a control image you choose. Pick a good sub — or let **Recommend for Me** score the frames matching your opened image and pick the best — then batch-analyze the compatible set at a chosen sensitivity (Conservative / Balanced / Aggressive), classify each frame **PASS / BORDERLINE / REJECT**, review and Keep/Reject individual frames, and apply the result. Star detection runs entirely in C++ (no external astrometry). **Mosaics are detected automatically** from the RA/DEC in each frame's header — when multiple panels are found, Meridian offers mosaic-aware culling that judges star count and brightness per panel (so frames from sparser panels aren't wrongly rejected) while keeping FWHM/eccentricity/noise compared to the control. Nothing is rejected without your approval, and Apply reuses the existing `.mrj` rejection mechanism.
 - **Native system theme** — automatically matches your KDE Plasma or GTK desktop. Wayland native rendering is supported.
 
 ---
@@ -178,7 +180,7 @@ Batch file operations accessible from the **Advanced Tools** panel. All tools op
 |---|---|
 | **Organise Stacked Files** | Detects and moves stacked FITS files into a `Stacked/` subfolder |
 | **Scan for JPG Files** | Recursively finds all `.jpg` files and displays them in the file table |
-| **Delete JPG Files** | Permanently removes all found JPG files after confirmation |
+| **Delete JPG Files** | Moves all found JPG files to the system Trash after confirmation (restorable) |
 | **Siril Prep** | Renames and organises FITS files into the folder structure expected by Siril preprocessing (light/dark/flat/bias subfolders) |
 | **Remove Empty Folders** | Recursively cleans up empty directories left after file operations |
 

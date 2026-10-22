@@ -1,5 +1,6 @@
 #include "fitsscanner.h"
 #include "fitsparser.h"
+#include "sessionstore.h"
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QDateTime>
@@ -18,55 +19,55 @@ static const QSet<QString> SCAN_SKIP_DIRS = { "stacked", "process", "darks", "fl
 QVariantMap MetadataEntry::toVariantMap() const
 {
     return {
-        {"Frame Type", frameType},
-        {"File", file},
-        {"Path", path},
-        {"Target", target},
-        {"Start Time UTC", startTimeUtc},
-        {"End Time UTC", endTimeUtc},
-        {"Exposure Time s", exposureTimeS},
-        {"Number of Subs", numberOfSubs},
-        {"Total Exposure Time s", totalExposureTimeS},
-        {"Telescope", telescope},
-        {"Camera Model", cameraModel},
-        {"Sensor Temperature C", sensorTemperatureC},
-        {"RA", ra},
-        {"DEC", dec},
-        {"Latitude", latitude},
-        {"Longitude", longitude},
-        {"Binning", binning},
-        {"Filter Used", filterUsed},
-        {"Gain", gain},
-        {"Focal Length mm", focalLengthMm},
-        {"Aperture mm", apertureMm},
-        {"Focus Position", focusPosition},
-        {"Image Type", imageType},
-        {"Stacking Software", stackingSoftware},
-        {"Rejected", rejected}
+        {QStringLiteral("Frame Type"), frameType},
+        {QStringLiteral("File"), file},
+        {QStringLiteral("Path"), path},
+        {QStringLiteral("Target"), target},
+        {QStringLiteral("Start Time UTC"), startTimeUtc},
+        {QStringLiteral("End Time UTC"), endTimeUtc},
+        {QStringLiteral("Exposure Time s"), exposureTimeS},
+        {QStringLiteral("Number of Subs"), numberOfSubs},
+        {QStringLiteral("Total Exposure Time s"), totalExposureTimeS},
+        {QStringLiteral("Telescope"), telescope},
+        {QStringLiteral("Camera Model"), cameraModel},
+        {QStringLiteral("Sensor Temperature C"), sensorTemperatureC},
+        {QStringLiteral("RA"), ra},
+        {QStringLiteral("DEC"), dec},
+        {QStringLiteral("Latitude"), latitude},
+        {QStringLiteral("Longitude"), longitude},
+        {QStringLiteral("Binning"), binning},
+        {QStringLiteral("Filter Used"), filterUsed},
+        {QStringLiteral("Gain"), gain},
+        {QStringLiteral("Focal Length mm"), focalLengthMm},
+        {QStringLiteral("Aperture mm"), apertureMm},
+        {QStringLiteral("Focus Position"), focusPosition},
+        {QStringLiteral("Image Type"), imageType},
+        {QStringLiteral("Stacking Software"), stackingSoftware},
+        {QStringLiteral("Rejected"), rejected}
     };
 }
 
 QVariantMap TargetSummaryEntry::toVariantMap() const
 {
     return {
-        {"Target", target},
-        {"FITS Count", fitsCount},
-        {"Files With Exposure", filesWithExposure},
-        {"Total Integration Time",   FitsScanner::formatHMS(totalIntegrationTimeS)},
-        {"Total Integration Time s", totalIntegrationTimeS}
+        {QStringLiteral("Target"), target},
+        {QStringLiteral("FITS Count"), fitsCount},
+        {QStringLiteral("Files With Exposure"), filesWithExposure},
+        {QStringLiteral("Total Integration Time"),   FitsScanner::formatHMS(totalIntegrationTimeS)},
+        {QStringLiteral("Total Integration Time s"), totalIntegrationTimeS}
     };
 }
 
 QVariantMap CalibrationSummaryEntry::toVariantMap() const
 {
     return {
-        {"Frame Type", frameType},
-        {"Exposure Time s", exposureTimeS},
-        {"Gain", gain},
-        {"Binning", binning},
-        {"Sensor Temp C", sensorTempC},
-        {"Count", count},
-        {"Most Recent", mostRecent}
+        {QStringLiteral("Frame Type"), frameType},
+        {QStringLiteral("Exposure Time s"), exposureTimeS},
+        {QStringLiteral("Gain"), gain},
+        {QStringLiteral("Binning"), binning},
+        {QStringLiteral("Sensor Temp C"), sensorTempC},
+        {QStringLiteral("Count"), count},
+        {QStringLiteral("Most Recent"), mostRecent}
     };
 }
 
@@ -218,8 +219,22 @@ void FitsScanner::walkDirectory(const QString &dir, QList<MetadataEntry> &result
         if (!info.fileName().contains(QRegularExpression("\\.(fit|fits)$", QRegularExpression::CaseInsensitiveOption)))
             continue;
 
+        const QString absPath = info.absoluteFilePath();
+        const qint64 mtime = info.lastModified().toSecsSinceEpoch();
+        const qint64 size  = info.size();
+
+        auto cachedIt = m_known.find(absPath);
+        if (cachedIt != m_known.end() && cachedIt->fileMtime == mtime && cachedIt->fileSize == size) {
+            MetadataEntry cached = *cachedIt;
+            m_known.erase(cachedIt);
+            cached.rejected = QFileInfo::exists(absPath + ".mrj");
+            m_filesProcessed++;
+            results.append(std::move(cached));
+            continue;
+        }
+
         m_filesProcessed++;
-        m_currentFile = info.absoluteFilePath();
+        m_currentFile = absPath;
         m_statusText = QString("Processing file %1...").arg(m_filesProcessed);
         emit progressChanged();
 
@@ -242,6 +257,8 @@ void FitsScanner::walkDirectory(const QString &dir, QList<MetadataEntry> &result
         entry.frameType = frameType;
         entry.file = info.fileName();
         entry.path = info.absoluteFilePath();
+        entry.fileMtime = mtime;
+        entry.fileSize = size;
 
         QString targetFromFilename = extractTargetFromFilename(info.fileName());
         if (!targetFromFilename.isEmpty()) {
@@ -448,6 +465,9 @@ void FitsScanner::scanDirectories()
     m_filesProcessed = 0;
     emit runningChanged();
 
+    m_lastScanRoots = m_directories;
+    m_known = m_store ? m_store->loadByPath() : QHash<QString, MetadataEntry>();
+
     QStringList paths = m_directories;
     auto *watcher = new QFutureWatcher<ScanResult>(this);
     connect(watcher, &QFutureWatcher<ScanResult>::finished, this, [this, watcher]() {
@@ -505,6 +525,9 @@ void FitsScanner::scanDirectory(const QString &dirPath)
     m_filesProcessed = 0;
     emit runningChanged();
 
+    m_lastScanRoots = {dirPath};
+    m_known = m_store ? m_store->loadByPath() : QHash<QString, MetadataEntry>();
+
     auto *watcher = new QFutureWatcher<ScanResult>(this);
     connect(watcher, &QFutureWatcher<ScanResult>::finished, this, [this, watcher]() {
         onScanFinished(watcher);
@@ -520,6 +543,10 @@ void FitsScanner::onScanFinished(QFutureWatcher<ScanResult> *watcher)
     if (!result.error.isEmpty()) {
         emit scanError(result.error);
     } else {
+        if (m_store && !result.canceled) {
+            m_store->syncScan(m_lastScanRoots, result.metadataList);
+            m_store->setDirectories(m_directories);
+        }
         QVariantList metaList, targetList, calList;
         for (const auto &e : result.metadataList)
             metaList.append(e.toVariantMap());
@@ -529,6 +556,7 @@ void FitsScanner::onScanFinished(QFutureWatcher<ScanResult> *watcher)
             calList.append(e.toVariantMap());
         emit scanCompleted(metaList, targetList, calList);
     }
+    m_known.clear();
     m_running = false;
     m_currentFile.clear();
     emit runningChanged();
@@ -539,4 +567,33 @@ void FitsScanner::onScanFinished(QFutureWatcher<ScanResult> *watcher)
 void FitsScanner::cancel()
 {
     m_canceled.storeRelaxed(1);
+}
+
+void FitsScanner::setSessionStore(SessionStore *store)
+{
+    m_store = store;
+}
+
+void FitsScanner::loadSession()
+{
+    if (m_running || !m_store) return;
+
+    m_directories = m_store->savedDirectories();
+    emit directoriesChanged();
+
+    m_statusText = "Loading saved session...";
+    emit progressChanged();
+
+    ScanResult r = aggregateEntries(m_store->loadAll());
+
+    QVariantList metaList, targetList, calList;
+    for (const auto &e : r.metadataList)       metaList.append(e.toVariantMap());
+    for (const auto &e : r.targetSummary)      targetList.append(e.toVariantMap());
+    for (const auto &e : r.calibrationSummary) calList.append(e.toVariantMap());
+
+    m_filesProcessed = r.metadataList.size();
+    m_statusText = QString("Loaded %1 file(s) from saved session.").arg(m_filesProcessed);
+    emit progressChanged();
+
+    emit scanCompleted(metaList, targetList, calList);
 }

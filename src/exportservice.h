@@ -14,15 +14,13 @@ class ExportService : public QObject
 public:
     explicit ExportService(QObject *parent = nullptr);
 
-    bool hasData() const { return !m_metadata.isEmpty(); }
+    bool hasData() const { return !m_targets.isEmpty(); }
 
-    void setData(const QVariantList &metadata,
-                 const QStringList &columns,
-                 const QVariantList &targets);
+    void setSummary(const QStringList &columns, const QVariantList &targets);
 
     Q_INVOKABLE QString exportTargetSummaryCsv();
-    Q_INVOKABLE QString exportSessionHistoryCsv();
-    Q_INVOKABLE QString exportReportHtml();
+    Q_INVOKABLE QString exportSessionHistoryCsv(const QVariantList &metadata);
+    Q_INVOKABLE QString exportReportHtml(const QVariantList &metadata);
 
 signals:
     void dataChanged();
@@ -31,7 +29,6 @@ signals:
 private:
     QString writeFile(const QString &path, const QString &contents);
 
-    QVariantList m_metadata;
     QStringList  m_columns;
     QVariantList m_targets;
 };

@@ -3,6 +3,10 @@
 #include <QQmlContext>
 #include <QDirIterator>
 
+#if defined(__GLIBC__)
+#include <malloc.h>
+#endif
+
 #include "fitsscanner.h"
 #include "fileorganizer.h"
 #include "fitsimageprovider.h"
@@ -17,9 +21,14 @@
 #include "wikiservice.h"
 #include "seestarservice.h"
 #include "exportservice.h"
+#include "sessionstore.h"
 
 int main(int argc, char *argv[])
 {
+#if defined(__GLIBC__)
+    mallopt(M_ARENA_MAX, 2);
+#endif
+
     QApplication app(argc, argv);
     app.setApplicationName("Meridian");
     app.setApplicationVersion("1.0.4a");
@@ -46,14 +55,16 @@ int main(int argc, char *argv[])
     SeestarService          seestarService;
     FrameCullingService     frameCullingService;
     ExportService           exportService;
+    SessionStore            sessionStore;
+
+    sessionStore.open();
+    scanner.setSessionStore(&sessionStore);
 
     QObject::connect(&locationService, &LocationService::locationObtained,
                      &weatherService,  &WeatherService::setLocation);
 
     QObject::connect(&locationService, &LocationService::locationObtained,
                      &lightPollutionService, &LightPollutionService::fetch);
-
-    locationService.requestLocation();
 
     QQmlApplicationEngine engine;
 
@@ -76,6 +87,7 @@ int main(int argc, char *argv[])
     ctx->setContextProperty("seestarService",          &seestarService);
     ctx->setContextProperty("cullingService",          &frameCullingService);
     ctx->setContextProperty("exportService",           &exportService);
+    ctx->setContextProperty("sessionStore",            &sessionStore);
 
     static const QStringList columns = {
         "Frame Type", "File", "Target", "Start Time UTC", "End Time UTC",
@@ -92,7 +104,7 @@ int main(int argc, char *argv[])
             targetSummaryModel.setEntries(targets);
             calibrationSummaryModel.setEntries(cals);
             catalogModel.buildFromTargets(targets);
-            exportService.setData(meta, columns, targets);
+            exportService.setSummary(columns, targets);
 
             QString minDate, maxDate;
 
@@ -121,6 +133,10 @@ int main(int argc, char *argv[])
 
     QObject::connect(&scanner, &FitsScanner::scanCompleted,        &app, onScanData);
     QObject::connect(&scanner, &FitsScanner::partialScanCompleted, &app, onScanData);
+
+#if defined(__GLIBC__)
+    QObject::connect(&scanner, &FitsScanner::scanCompleted, &app, []() { malloc_trim(0); });
+#endif
 
     QUrl mainQml;
     {

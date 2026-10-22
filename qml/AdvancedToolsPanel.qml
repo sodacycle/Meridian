@@ -122,8 +122,8 @@ Rectangle {
                             id: exportMenu
                             y: exportBtn.height
                             MenuItem { text: "Target Summary (CSV)…";  onTriggered: exportService.exportTargetSummaryCsv() }
-                            MenuItem { text: "Session History (CSV)…"; onTriggered: exportService.exportSessionHistoryCsv() }
-                            MenuItem { text: "Report (HTML)…";          onTriggered: exportService.exportReportHtml() }
+                            MenuItem { text: "Session History (CSV)…"; onTriggered: exportService.exportSessionHistoryCsv(window.fullMetadataList) }
+                            MenuItem { text: "Report (HTML)…";          onTriggered: exportService.exportReportHtml(window.fullMetadataList) }
                         }
                     }
                 }
@@ -141,7 +141,7 @@ Rectangle {
                         text: "Delete JPG Files"
                         enabled: !organizer.running
                         ToolTip.visible: hovered; ToolTip.delay: 500
-                        ToolTip.text: "Permanently delete all " + root.jpgCount + " JPG file(s).\nA confirmation prompt will appear first."
+                        ToolTip.text: "Move all " + root.jpgCount + " JPG file(s) to the Trash.\nA confirmation prompt will appear first."
                         onClicked: confirmDeleteDialog.open()
                     }
                     Button {
@@ -244,18 +244,18 @@ Rectangle {
             width: 380
             Text {
                 width: parent.width
-                text: "Permanently delete " + root.jpgCount + " JPG file(s) from " + root.directories.length + " folder(s)."
+                text: "Move " + root.jpgCount + " JPG file(s) from " + root.directories.length + " folder(s) to the Trash."
                 color: window.sysPal.windowText
                 wrapMode: Text.WordWrap; font.pixelSize: 13
             }
             Text {
-                text: "This action cannot be undone."
-                color: "#cc3300"; font.pixelSize: 13; font.bold: true
+                text: "The files are sent to your system Trash and can be restored from there."
+                color: window.sysPal.windowText; opacity: 0.8; font.pixelSize: 12
             }
         }
 
         onAccepted: {
-            root.log("Deleting " + root.jpgCount + " JPG file(s)…")
+            root.log("Moving " + root.jpgCount + " JPG file(s) to Trash…")
             organizer.removeJpg(root.directories)
         }
     }

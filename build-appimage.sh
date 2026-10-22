@@ -80,7 +80,7 @@ QT_PLUGINS_DIR="$("$QMAKE6" -query QT_INSTALL_PLUGINS)"
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 export DISABLE_COPYRIGHT_FILES_DEPLOYMENT=1
-export EXCLUDE_LIBS="libQt6VirtualKeyboard.so.6:libQt6VirtualKeyboardQml.so.6:libQt6VirtualKeyboardSettings.so.6:libQt6Pdf.so.6:libQt6PdfQuick.so.6:libQt6QuickTimeline.so.6:libQt6QuickTimelineBlendTrees.so.6:libQt6QuickVectorImage.so.6:libQt6QuickVectorImageGenerator.so.6:libQt6QuickVectorImageHelpers.so.6:libQt6PrintSupport.so.6:libQt6Sql.so.6:libQt6HunspellInputMethod.so.6:libQt6QmlXmlListModel.so.6:libQt6QmlLocalStorage.so.6"
+export EXCLUDE_LIBS="libQt6VirtualKeyboard.so.6:libQt6VirtualKeyboardQml.so.6:libQt6VirtualKeyboardSettings.so.6:libQt6Pdf.so.6:libQt6PdfQuick.so.6:libQt6QuickTimeline.so.6:libQt6QuickTimelineBlendTrees.so.6:libQt6QuickVectorImage.so.6:libQt6QuickVectorImageGenerator.so.6:libQt6QuickVectorImageHelpers.so.6:libQt6PrintSupport.so.6:libQt6HunspellInputMethod.so.6:libQt6QmlXmlListModel.so.6:libQt6QmlLocalStorage.so.6"
 
 if [[ "$SKIP_BUILD" == false ]]; then
     info "Fixing file timestamps to prevent clock-skew warnings..."
@@ -204,6 +204,9 @@ _sync_qml_module() {
 _ensure_plugin "$QT_PLUGINS_DIR/tls/libqopensslbackend.so"  "$APPDIR/usr/plugins/tls"
 _ensure_plugin "$QT_PLUGINS_DIR/tls/libqcertonlybackend.so" "$APPDIR/usr/plugins/tls"
 
+# SQLite SQL driver — required for the session database (SessionStore)
+_ensure_plugin "$QT_PLUGINS_DIR/sqldrivers/libqsqlite.so" "$APPDIR/usr/plugins/sqldrivers"
+
 # SVG imageformat plugin — required to render .svg files via QQuickImage
 _ensure_plugin "$QT_PLUGINS_DIR/imageformats/libqsvg.so" "$APPDIR/usr/plugins/imageformats"
 
@@ -239,6 +242,7 @@ done < <(find \
     "$APPDIR/usr/plugins/tls" \
     "$APPDIR/usr/plugins/xcbglintegrations" \
     "$APPDIR/usr/plugins/imageformats" \
+    "$APPDIR/usr/plugins/sqldrivers" \
     "$APPDIR/usr/qml" \
     -name "*.so" -print0 2>/dev/null)
 
@@ -323,7 +327,7 @@ find "$APPDIR/usr/plugins/imageformats" -name "kimg_*" -delete 2>/dev/null || tr
 info "Removing unused libraries..."
 for lib in \
     libQt6VirtualKeyboard libQt6Pdf libQt6PdfQuick libQt6PrintSupport \
-    libQt6Sql libQt6HunspellInputMethod libQt6QmlXmlListModel \
+    libQt6HunspellInputMethod libQt6QmlXmlListModel \
     libQt6QmlLocalStorage libQt6QuickTimeline libQt6QuickTimelineBlendTrees \
     libQt6QuickVectorImage libQt6QuickVectorImageGenerator libQt6QuickVectorImageHelpers \
     libhunspell libOpenEXR libIex libIlmThread libOpenEXRCore \

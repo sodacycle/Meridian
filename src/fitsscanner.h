@@ -7,7 +7,10 @@
 #include <QStringList>
 #include <QVariantMap>
 #include <QAtomicInt>
+#include <QHash>
 #include <QFutureWatcher>
+
+class SessionStore;
 
 struct MetadataEntry {
     QString frameType;
@@ -35,6 +38,8 @@ struct MetadataEntry {
     QString imageType;
     QString stackingSoftware;
     bool    rejected = false;
+    qint64  fileMtime = 0;
+    qint64  fileSize = 0;
 
     QVariantMap toVariantMap() const;
 };
@@ -102,6 +107,9 @@ public:
     Q_INVOKABLE void cancel();
     Q_INVOKABLE QStringList listFitsFiles() const;
 
+    void setSessionStore(SessionStore *store);
+    Q_INVOKABLE void loadSession();
+
     static bool metadataIndicatesStacking(const QHash<QString, QVariant> &header);
     static QString anyField(const QHash<QString, QVariant> &header,
                             const QStringList &keys,
@@ -139,6 +147,10 @@ private:
     QString m_currentFile;
     QStringList m_directories;
     QString m_currentScanDirectory;
+
+    SessionStore *m_store = nullptr;
+    QHash<QString, MetadataEntry> m_known;
+    QStringList m_lastScanRoots;
 };
 
 #endif

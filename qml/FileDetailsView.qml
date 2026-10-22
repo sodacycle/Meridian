@@ -8,10 +8,9 @@ Rectangle {
     border.width: 1
     radius: 6
 
-    property int    rowCount: 0
-    property var    allRows: []
-    property var    displayRows: []
-    property bool   _keepDisplay: false
+    property bool   jpgMode: false
+    property var    jpgRows: []
+    property bool   filtered: false
     property string sortCol: ""
     property bool   sortAsc: true
 
@@ -23,19 +22,20 @@ Rectangle {
 
     function applyCurrentSort() {
         if (!sortCol) return
-        var col = sortCol
-        var asc = sortAsc
-        var rows = displayRows.slice()
-        rows.sort(function(a, b) {
-            var va = (a[col] !== undefined && a[col] !== null) ? a[col] : ""
-            var vb = (b[col] !== undefined && b[col] !== null) ? b[col] : ""
-            var na = parseFloat(va), nb = parseFloat(vb)
-            var less
-            if (!isNaN(na) && !isNaN(nb)) less = na < nb
-            else less = String(va).localeCompare(String(vb)) < 0
-            return asc ? (less ? -1 : 1) : (less ? 1 : -1)
-        })
-        displayRows = rows
+        if (jpgMode) {
+            var col = sortCol, asc = sortAsc
+            var rows = jpgRows.slice()
+            rows.sort(function(a, b) {
+                var va = (a[col] !== undefined && a[col] !== null) ? a[col] : ""
+                var vb = (b[col] !== undefined && b[col] !== null) ? b[col] : ""
+                var na = parseFloat(va), nb = parseFloat(vb)
+                var less = (!isNaN(na) && !isNaN(nb)) ? na < nb : String(va).localeCompare(String(vb)) < 0
+                return asc ? (less ? -1 : 1) : (less ? 1 : -1)
+            })
+            jpgRows = rows
+        } else {
+            metadataModel.sortByColumn(sortCol, sortAsc)
+        }
     }
 
     function headerClicked(col) {
@@ -54,78 +54,56 @@ Rectangle {
     property var colW: [100,200,150,180,180,110,110,140,150,150,130,100,100,100,100,80,120,80,120,100,120,100,150]
     property int totalW: { var w=0; for(var i=0;i<colW.length;i++) w+=colW[i]; return w }
 
-    onAllRowsChanged: {
-        if (!_keepDisplay) {
-            displayRows = allRows
-            showAllBtn.visible = false
-            selectedFilePath = ""
-            selectedFileName  = ""
-            applyCurrentSort()
-        }
+    property int displayCount: jpgMode ? jpgRows.length : metadataModel.count
+
+    function setJpgRows(rows) {
+        jpgMode = true
+        jpgRows = rows
+        filtered = false
+        showAllBtn.visible = false
+        selectedFilePath = ""
+        selectedFileName  = ""
+        applyCurrentSort()
+    }
+
+    function showFits() {
+        jpgMode = false
+        jpgRows = []
+        filtered = false
+        showAllBtn.visible = false
     }
 
     function removeRow(path) {
-        _keepDisplay = true
-        allRows    = allRows.filter(function(r)    { return r["Path"] !== path })
-        displayRows = displayRows.filter(function(r) { return r["Path"] !== path })
-        _keepDisplay = false
-    }
-
-    Connections {
-        target: metadataModel
-        function onModelReset()   { root.rowCount = metadataModel.rowCount() }
-        function onRowsInserted() { root.rowCount = metadataModel.rowCount() }
-        function onRowsRemoved()  { root.rowCount = metadataModel.rowCount() }
+        if (jpgMode)
+            jpgRows = jpgRows.filter(function(r) { return r["Path"] !== path })
+        else
+            metadataModel.removeByPath(path)
     }
 
     function filterByCatalog(catalog) {
-        if (!allRows.length) return
-        var filtered = []
-        for (var i = 0; i < allRows.length; i++) {
-            var row = allRows[i]
-            var t = (row["Target"]||"").toUpperCase().replace(/MOSAIC/g,"").replace(/PANEL/g,"").replace(/-/g," ").trim()
-            var m = false
-            if      (catalog==="Messier")   m=t.startsWith("M ")
-            else if (catalog==="NGC")       m=t.startsWith("NGC")
-            else if (catalog==="IC")        m=t.startsWith("IC")
-            else if (catalog==="Caldwell")  m=t.startsWith("CALDWELL")
-            else if (catalog==="Sharpless") m=t.startsWith("SH2")||t.startsWith("SH ")
-            else if (catalog==="Barnard")   m=t.startsWith("BARNARD")||t.startsWith("B ")
-            else if (catalog==="LDN")       m=t.startsWith("LDN")
-            else if (catalog==="LBN")       m=t.startsWith("LBN")
-            else if (catalog==="Abell")     m=t.startsWith("ABELL")
-            else if (catalog==="PGC")       m=t.startsWith("PGC")
-            else if (catalog==="UGC")       m=t.startsWith("UGC")
-            else if (catalog==="Other")     m=!t.startsWith("M ")&&!t.startsWith("NGC")&&!t.startsWith("IC")&&
-                !t.startsWith("CALDWELL")&&!t.startsWith("SH")&&!t.startsWith("BARNARD")&&
-                !t.startsWith("B ")&&!t.startsWith("LDN")&&!t.startsWith("LBN")&&
-                !t.startsWith("ABELL")&&!t.startsWith("PGC")&&!t.startsWith("UGC")
-            if (m) filtered.push(row)
-        }
-        displayRows = filtered; showAllBtn.visible = true; applyCurrentSort()
+        jpgMode = false
+        metadataModel.filterByCatalog(catalog)
+        filtered = true; showAllBtn.visible = true
     }
 
     function filterByTarget(target) {
-        if (!allRows.length) return
-        var filtered = []
-        for (var i = 0; i < allRows.length; i++) {
-            if (allRows[i]["Target"] === target) filtered.push(allRows[i])
-        }
-        displayRows = filtered; showAllBtn.visible = true; applyCurrentSort()
+        jpgMode = false
+        metadataModel.filterByTarget(target)
+        filtered = true; showAllBtn.visible = true
     }
 
     function filterByTargetAndDate(target, date) {
-        if (!allRows.length) return
-        var filtered = []
-        for (var i = 0; i < allRows.length; i++) {
-            var row = allRows[i]
-            var rowDate = (row["Start Time UTC"]||"").toString().substring(0,10)
-            if (row["Target"]===target && rowDate===date) filtered.push(row)
-        }
-        displayRows = filtered; showAllBtn.visible = true; applyCurrentSort()
+        jpgMode = false
+        metadataModel.filterByTargetAndDate(target, date)
+        filtered = true; showAllBtn.visible = true
     }
 
-    function showAll() { displayRows = allRows; showAllBtn.visible = false; applyCurrentSort(); showAllRequested() }
+    function showAll() {
+        jpgMode = false
+        metadataModel.showAll()
+        filtered = false; showAllBtn.visible = false
+        showAllRequested()
+    }
 
     Column {
         anchors.fill: parent; anchors.margins: 16; spacing: 10
@@ -214,13 +192,15 @@ Rectangle {
                     anchors { left: parent.left; right: parent.right
                               top: parent.top; topMargin: 32; bottom: parent.bottom }
                     clip: true
-                    model: root.displayRows
+                    model: root.jpgMode ? root.jpgRows : metadataModel
+                    reuseItems: true
+                    cacheBuffer: 240
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
                     Keys.onReturnPressed: {
                         if (currentIndex >= 0 && currentItem) {
-                            var p = currentItem.modelData["Path"] || ""
-                            var n = currentItem.modelData["File"] || ""
+                            var p = currentItem.rowObj["Path"] || ""
+                            var n = currentItem.rowObj["File"] || ""
                             root.selectedFilePath = p
                             root.selectedFileName  = n
                             if (p !== "") root.fileOpenRequested(p, n)
@@ -229,19 +209,21 @@ Rectangle {
                     Keys.onEnterPressed: Keys.returnPressed(event)
 
                     delegate: Item {
+                        id: rowItem
                         required property var modelData
                         required property int index
+                        readonly property var rowObj: modelData
                         width: detailsList.width; height: 30
 
-                        readonly property bool isSelected: (modelData["Path"] || "") === root.selectedFilePath
+                        readonly property bool isSelected: (rowObj["Path"] || "") === root.selectedFilePath
                         readonly property bool isCurrent:  ListView.isCurrentItem
 
                         Rectangle {
                             x: -pane.hOffset; width: root.totalW; height: parent.height
-                            color: (isSelected || isCurrent)
+                            color: (rowItem.isSelected || rowItem.isCurrent)
                                    ? window.sysPal.highlight
                                    : (rowMouse.containsMouse ? window.sysPal.highlight
-                                                             : (index % 2 === 0 ? window.sysPal.alternateBase : "transparent"))
+                                                             : (rowItem.index % 2 === 0 ? window.sysPal.alternateBase : "transparent"))
                             radius: 2
                         }
                         Row {
@@ -254,8 +236,8 @@ Rectangle {
                                     width: root.colW[index]; height: 30
                                     Text {
                                         anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 4
-                                        text: { var v = modelData[colKey]; return v !== undefined && v !== null ? v : "" }
-                                        color: (rowMouse.containsMouse || isSelected || isCurrent)
+                                        text: { var v = rowItem.rowObj[colKey]; return v !== undefined && v !== null ? v : "" }
+                                        color: (rowMouse.containsMouse || rowItem.isSelected || rowItem.isCurrent)
                                                ? window.sysPal.highlightedText
                                                : window.sysPal.windowText
                                         font.pixelSize: 12
@@ -271,12 +253,12 @@ Rectangle {
                             cursorShape: Qt.PointingHandCursor
                             ToolTip.visible: containsMouse
                             ToolTip.delay: 600
-                            ToolTip.text: "Click to select and open '" + (modelData["File"] || "") + "' in the Image Viewer"
+                            ToolTip.text: "Click to select and open '" + (rowItem.rowObj["File"] || "") + "' in the Image Viewer"
                             onClicked: {
-                                detailsList.currentIndex = index
+                                detailsList.currentIndex = rowItem.index
                                 detailsList.forceActiveFocus()
-                                var p = modelData["Path"] || ""
-                                var n = modelData["File"] || ""
+                                var p = rowItem.rowObj["Path"] || ""
+                                var n = rowItem.rowObj["File"] || ""
                                 root.selectedFilePath = p
                                 root.selectedFileName  = n
                                 if (p !== "") root.fileOpenRequested(p, n)
@@ -290,7 +272,7 @@ Rectangle {
         Text {
             text: "Scan FITS files to see file-level details."
             color: window.sysPal.placeholderText; font.pixelSize: 13
-            visible: root.displayRows.length === 0
+            visible: root.displayCount === 0
         }
     }
 }
