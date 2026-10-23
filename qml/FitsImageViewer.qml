@@ -526,7 +526,7 @@ Window {
                         width: parent.width; implicitHeight: 32
                         text: "Delete File"
                         ToolTip.visible: hovered; ToolTip.delay: 400
-                        ToolTip.text: "Permanently delete this file from disk.\nA confirmation prompt will appear first."
+                        ToolTip.text: "Move this file to the system Trash.\nA confirmation prompt will appear first."
                         onClicked: { footerError.text = ""; deleteDialog.open() }
                     }
                 }
@@ -838,7 +838,7 @@ Window {
 
             Text {
                 width: parent.width
-                text: "Permanently delete:\n" + viewer.filePath.split("/").pop()
+                text: "Move to Trash:\n" + viewer.filePath.split("/").pop()
                 color: "#dddddd"; font.pixelSize: 13; wrapMode: Text.WordWrap
             }
             Text {
@@ -847,8 +847,8 @@ Window {
                 color: "#888888"; font.pixelSize: 11; wrapMode: Text.WrapAnywhere
             }
             Text {
-                text: "This action cannot be undone."
-                color: "#cc3300"; font.pixelSize: 13; font.bold: true
+                text: "The file is sent to the system Trash and can be restored."
+                color: "#999999"; font.pixelSize: 12
             }
         }
 
@@ -857,7 +857,7 @@ Window {
                 viewer.fileDeleted(viewer.filePath)
                 viewer.visible = false
             } else {
-                footerError.text = "Could not delete file — check permissions."
+                footerError.text = "Could not move file to Trash — check permissions."
             }
         }
     }

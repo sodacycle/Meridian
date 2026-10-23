@@ -28,6 +28,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **File Organiser** — batch tools for organising stacked files, scanning/deleting JPG previews, preparing Siril folder structures, and removing empty directories — all operating across all scan directories simultaneously.
 - **Export / Reports** — from **File → Export**, save the Target Summary or the full session history as **CSV**, or a self-contained **printable HTML report** (target summary + session history, styled for print) — after a scan.
 - **Frame Culling (Auto-Sort)** — the **Culling** tab of the Image Viewer flags subs measurably worse than a control image you choose. Pick a good sub — or let **Recommend for Me** score the frames matching your opened image and pick the best — then batch-analyze the compatible set at a chosen sensitivity (Conservative / Balanced / Aggressive), classify each frame **PASS / BORDERLINE / REJECT**, review and Keep/Reject individual frames, and apply the result. Star detection runs entirely in C++ (no external astrometry). **Mosaics are detected automatically** from the RA/DEC in each frame's header — when multiple panels are found, Meridian offers mosaic-aware culling that judges star count and brightness per panel (so frames from sparser panels aren't wrongly rejected) while keeping FWHM/eccentricity/noise compared to the control. Nothing is rejected without your approval, and Apply reuses the existing `.mrj` rejection mechanism.
+- **Image Stacking** — the **Stacking** tab of the Image Viewer integrates the frames compatible with the open image (rejected frames excluded automatically) into a single, deeper image, entirely in C++. Choose star-based alignment on/off, **Average** or **sigma-clipped** combination (rejects hot pixels and satellite/plane trails), and an **output mode** — Mono (luminance), Colour (RGB via superpixel debayer, reading the frame's Bayer pattern from its header), or a single Red/Green/Blue channel. The result is written as a 32-bit float FITS into a `stacked/` subfolder, with a live progress bar, Cancel, and one-click **Open Result in Viewer**.
 - **Native system theme** — automatically matches your KDE Plasma or GTK desktop. Wayland native rendering is supported.
 
 ---
@@ -64,7 +65,7 @@ Click any file in the metadata table to open it in a dedicated dark-themed viewe
 
 **Safety and file management:**
 - Gracefully handles compressed FITS, missing pixel data, and large files (512 MB safety limit)
-- Delete the current file directly from the viewer with a confirmation prompt
+- Send the current file to the system Trash directly from the viewer (recoverable), with a confirmation prompt
 - Full file path shown with hover tooltip
 
 ---
@@ -223,6 +224,27 @@ Once a scan has run, **File → Export** offers three outputs (each opens a save
 | **Report (HTML)** | A self-contained, printable HTML page: header with totals, the Target Summary table, and a session-history table (rejected frames struck through), styled with `@media print` rules |
 
 CSV fields are RFC-4180 quoted where needed; the HTML report needs no external assets and opens in any browser.
+
+---
+
+### Image Stacking
+
+The **Stacking** tab of the Image Viewer integrates many sub-exposures of the same target into one deeper, cleaner image — a first, foundational implementation built as a **register → combine → write** pipeline, entirely in C++ (no external stacker). See the [Image Viewer wiki page](https://github.com/sodacycle/Meridian/wiki/Image-Viewer#stacking) for details.
+
+**What gets stacked.** Stacking uses the frames *compatible with the image you opened* — the same set culling uses (target, filter, exposure, binning, gain, camera, telescope) — and automatically leaves out any frame you have rejected (`.mrj`). The reference every frame aligns to is the image currently open in the Viewer.
+
+**Options you choose:**
+
+| Option | Effect |
+|---|---|
+| **Align frames** | Star-based registration: detects stars in each frame and corrects its X/Y shift (dithering, drift) by offset voting. *(Translation only for now — field rotation is a later phase.)* Turn off if the frames are already registered. |
+| **Combine → Average** | Plain mean of every frame. Fastest; per-pixel outliers survive. |
+| **Combine → Sigma-clipped average** | Rejects per-pixel values beyond 3σ of the running mean before averaging (hot pixels, satellite/plane trails). Reads each frame twice. |
+| **Output → Mono** | One greyscale (luminance) image. Works for any frame. |
+| **Output → Colour (RGB)** | A three-channel image via superpixel debayer (each 2×2 Bayer cell → one RGB pixel, half resolution). Needs colour (OSC) frames; the Bayer pattern is read from the FITS header. Raw colour is green-heavy until balanced in post. |
+| **Output → Red / Green / Blue** | A single colour channel, saved as a greyscale image. OSC frames only. |
+
+Alignment always runs on the luminance plane, so every channel registers identically. The result is written as a 32-bit float FITS into a `stacked/` subfolder beside the reference frame (`Stacked_<target>_<N>f_<method>_<output>.fit`, carrying a `STACKCNT` header; colour is a 3-plane RGB cube the Viewer renders in colour). A progress bar reports the alignment and combination phases, **Cancel** stops the run, and **Open Result in Viewer** loads the finished stack. Full-resolution demosaic, rotation-aware registration, calibration frames, and automatic colour balance are on the [roadmap](https://github.com/sodacycle/Meridian/wiki/Roadmap).
 
 ---
 
