@@ -36,7 +36,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 
 ### Image Viewer
 
-Click any file in the metadata table to open it in a dedicated dark-themed viewer, or use the **Image Viewer** button in the controls panel to open the workspace and browse. The viewer is a **tabbed workspace** with a left rail — **Viewer** (display + processing, below), **Files** (a list of the `.fit` files in your scan folders), **Culling** (frame culling, see below), **Settings** (auto-sort defaults and the Viewer's stretch/clip/denoise slider limits, persisted between sessions), and a placeholder **Stacking** tab. Supports both FITS (`.fit` / `.fits`) and JPEG (`.jpg` / `.jpeg`) files. All processing is done locally in C++ — no external tools needed.
+Click any file in the metadata table to open it in a dedicated dark-themed viewer, or use the **Image Viewer** button in the controls panel to open the workspace and browse. The viewer is a **tabbed workspace** with a left rail — **Viewer** (display + processing, below), **Files** (a list of the `.fit` files in your scan folders), **Culling** (frame culling, see below), **Stacking** (align + combine the compatible, non-rejected frames into a single deeper FITS — star-based alignment, Average or sigma-clipped combination, and a Mono / Colour (RGB) / per-channel output mode), and **Settings** (auto-sort defaults and the Viewer's stretch/clip/denoise slider limits, persisted between sessions). Supports both FITS (`.fit` / `.fits`) and JPEG (`.jpg` / `.jpeg`) files. All processing is done locally in C++ — no external tools needed.
 
 **Navigation and zoom:**
 - Zoom in/out, fit-to-window, and 1:1 pixel-perfect viewing
@@ -344,6 +344,7 @@ Meridian/
 │   ├── fitspixelreader.*   Shared raw-pixel FITS decoder (mono/RGB/Bayer)
 │   ├── starfinder.*        Star detection + FWHM/eccentricity/flux measurement
 │   ├── framecullingservice.* Frame culling — control-image analyzer + recommender
+│   ├── stackingservice.*   Image stacking — align + combine compatible frames into a FITS
 │   ├── fileorganizer.*     Batch file organiser
 │   ├── metadatamodel.*     Table and summary models
 │   ├── catalogservice.*    NGC/IC/Messier catalog loader
@@ -370,8 +371,9 @@ Meridian/
 │   ├── FitsViewerManager.qml
 │   ├── FileListView.qml     Files tab — .fit list from the scan folders
 │   ├── CullingView.qml      Culling tab — analyzer, recommender, culling workflow
+│   ├── StackingView.qml     Stacking tab — align/combine options, progress, result
 │   ├── SettingsView.qml     Settings tab — auto-sort defaults + viewer stretch limits
-│   ├── PlaceholderSection.qml  Stacking tab placeholder
+│   ├── PlaceholderSection.qml  Generic "Planned" placeholder panel
 │   ├── AboutDialog.qml
 │   └── components/         Reusable QML sub-components
 │       └── ProgressIndicator.qml

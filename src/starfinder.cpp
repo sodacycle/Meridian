@@ -62,28 +62,16 @@ struct StarCandidate {
     double eccentricity = 0.0;
 };
 
-double medianOf(std::vector<double> values)
+// Connected-component search for sources above background + 5 sigma, with a
+// second-moment ellipse fit for FWHM/eccentricity. Shared by analyze() and
+// detectStars() so the two never drift apart.
+std::vector<StarCandidate> findStarCandidates(const FitsPixelData &data,
+                                              const BackgroundStats &bg)
 {
-    if (values.empty()) return 0.0;
-    std::sort(values.begin(), values.end());
-    const size_t mid = values.size() / 2;
-    if (values.size() % 2 == 0)
-        return (values[mid - 1] + values[mid]) * 0.5;
-    return values[mid];
-}
-
-} // namespace
-
-FrameQuality StarFinder::analyze(const FitsPixelData &data)
-{
-    FrameQuality result;
-    if (!data.valid || data.width < 8 || data.height < 8 || data.pixels.empty())
-        return result;
+    std::vector<StarCandidate> stars;
 
     const int W = data.width, H = data.height;
     const std::vector<float> &px = data.pixels;
-
-    const BackgroundStats bg = estimateBackground(px);
     const double threshold = bg.median + 5.0 * bg.sigma;
 
     constexpr int kMinBlobPixels = 3;
@@ -91,7 +79,6 @@ FrameQuality StarFinder::analyze(const FitsPixelData &data)
     constexpr int kMaxStars      = 4000;
 
     std::vector<uint8_t> visited(px.size(), 0);
-    std::vector<StarCandidate> stars;
     stars.reserve(256);
 
     std::vector<int> stack;
@@ -182,6 +169,30 @@ FrameQuality StarFinder::analyze(const FitsPixelData &data)
         }
     }
 
+    return stars;
+}
+
+double medianOf(std::vector<double> values)
+{
+    if (values.empty()) return 0.0;
+    std::sort(values.begin(), values.end());
+    const size_t mid = values.size() / 2;
+    if (values.size() % 2 == 0)
+        return (values[mid - 1] + values[mid]) * 0.5;
+    return values[mid];
+}
+
+} // namespace
+
+FrameQuality StarFinder::analyze(const FitsPixelData &data)
+{
+    FrameQuality result;
+    if (!data.valid || data.width < 8 || data.height < 8 || data.pixels.empty())
+        return result;
+
+    const BackgroundStats bg = estimateBackground(data.pixels);
+    const std::vector<StarCandidate> stars = findStarCandidates(data, bg);
+
     result.starCount = (int)stars.size();
 
     // "Reasonably bright, isolated" subset used for shape/flux statistics,
@@ -218,4 +229,26 @@ FrameQuality StarFinder::analyze(const FitsPixelData &data)
     result.valid              = true;
 
     return result;
+}
+
+std::vector<StarPoint> StarFinder::detectStars(const FitsPixelData &data, int maxStars)
+{
+    std::vector<StarPoint> points;
+    if (!data.valid || data.width < 8 || data.height < 8 || data.pixels.empty())
+        return points;
+
+    const BackgroundStats bg = estimateBackground(data.pixels);
+    std::vector<StarCandidate> stars = findStarCandidates(data, bg);
+
+    std::sort(stars.begin(), stars.end(),
+              [](const StarCandidate &a, const StarCandidate &b) { return a.flux > b.flux; });
+
+    if (maxStars > 0 && (int)stars.size() > maxStars)
+        stars.resize(maxStars);
+
+    points.reserve(stars.size());
+    for (const StarCandidate &s : stars)
+        points.push_back({ s.cx, s.cy, s.flux });
+
+    return points;
 }

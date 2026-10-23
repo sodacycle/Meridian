@@ -46,6 +46,7 @@ qt_add_executable(Meridian WIN32
     src/fitspixelreader.h   src/fitspixelreader.cpp
     src/starfinder.h        src/starfinder.cpp
     src/framecullingservice.h src/framecullingservice.cpp
+    src/stackingservice.h     src/stackingservice.cpp
     src/weatherservice.h    src/weatherservice.cpp
     src/metadatamodel.h     src/metadatamodel.cpp
     src/catalogservice.h    src/catalogservice.cpp
@@ -74,6 +75,7 @@ qt_add_qml_module(Meridian
         qml/FitsImageViewer.qml
         qml/FitsViewerManager.qml
         qml/CullingView.qml
+        qml/StackingView.qml
         qml/FileListView.qml
         qml/SettingsView.qml
         qml/PlaceholderSection.qml

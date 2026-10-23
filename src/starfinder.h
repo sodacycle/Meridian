@@ -2,6 +2,7 @@
 #define STARFINDER_H
 
 #include "fitspixelreader.h"
+#include <vector>
 
 struct FrameQuality {
     bool   valid = false;
@@ -14,10 +15,17 @@ struct FrameQuality {
     double backgroundNoise = 0.0;
 };
 
+struct StarPoint {
+    double x = 0.0;
+    double y = 0.0;
+    double flux = 0.0;
+};
+
 class StarFinder
 {
 public:
     static FrameQuality analyze(const FitsPixelData &data);
+    static std::vector<StarPoint> detectStars(const FitsPixelData &data, int maxStars = 200);
 };
 
 #endif

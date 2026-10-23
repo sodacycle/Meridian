@@ -11,6 +11,7 @@
 #include "fileorganizer.h"
 #include "fitsimageprovider.h"
 #include "framecullingservice.h"
+#include "stackingservice.h"
 #include "weatherservice.h"
 #include "metadatamodel.h"
 #include "catalogservice.h"
@@ -54,6 +55,7 @@ int main(int argc, char *argv[])
     WikiService             wikiService;
     SeestarService          seestarService;
     FrameCullingService     frameCullingService;
+    StackingService         stackingService;
     ExportService           exportService;
     SessionStore            sessionStore;
 
@@ -86,6 +88,7 @@ int main(int argc, char *argv[])
     ctx->setContextProperty("wikiService",             &wikiService);
     ctx->setContextProperty("seestarService",          &seestarService);
     ctx->setContextProperty("cullingService",          &frameCullingService);
+    ctx->setContextProperty("stackingService",         &stackingService);
     ctx->setContextProperty("exportService",           &exportService);
     ctx->setContextProperty("sessionStore",            &sessionStore);
 

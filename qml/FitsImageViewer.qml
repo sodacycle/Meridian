@@ -121,13 +121,10 @@ Window {
     }
 
     function sameFolderPaths(path) {
+        if (path === "") return []
         var dir = path.substring(0, path.lastIndexOf("/"))
-        var all = scanner.listFitsFiles()
-        var out = []
-        for (var i = 0; i < all.length; i++) {
-            if (all[i].substring(0, all[i].lastIndexOf("/")) === dir) out.push(all[i])
-        }
-        return out.length > 0 ? out : (path !== "" ? [path] : [])
+        var out = scanner.listFitsInDir(dir)
+        return (out && out.length > 0) ? out : [path]
     }
 
     signal fileDeleted(string path)
@@ -782,11 +779,14 @@ Window {
             onRefreshRequested: viewer.refreshFileList()
         }
 
-        PlaceholderSection {
+        StackingView {
             anchors.fill: parent
             visible: viewer.activeSection === 3
-            title: "Stacking"
-            body: "Integration and preprocessing controls are planned for a later phase."
+            candidatePaths: viewer.compatiblePaths
+            rejectedSet:    viewer.rejectedSet
+            referencePath:  viewer.filePath
+            targetName:     viewer.currentTarget
+            onOpenResultRequested: function(path) { viewer.openFile(path) }
         }
 
         SettingsView {

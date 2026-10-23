@@ -352,6 +352,22 @@ QStringList FitsScanner::listFitsFiles() const
     files.removeDuplicates();
     return files;
 }
+
+QStringList FitsScanner::listFitsInDir(const QString &dir) const
+{
+    static const QRegularExpression fitsRe("\\.(fit|fits)$", QRegularExpression::CaseInsensitiveOption);
+
+    QStringList files;
+    QDirIterator it(dir, QDir::Files | QDir::NoDotAndDotDot);
+    while (it.hasNext()) {
+        it.next();
+        const QFileInfo info = it.fileInfo();
+        if (info.fileName().contains(fitsRe))
+            files.append(info.absoluteFilePath());
+    }
+    files.sort(Qt::CaseInsensitive);
+    return files;
+}
 QString FitsScanner::currentScanDirectory() const { return m_currentScanDirectory; }
 
 QString FitsScanner::selectDirectory()

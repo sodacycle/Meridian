@@ -106,6 +106,7 @@ public:
     Q_INVOKABLE void scanDirectory(const QString &dirPath);
     Q_INVOKABLE void cancel();
     Q_INVOKABLE QStringList listFitsFiles() const;
+    Q_INVOKABLE QStringList listFitsInDir(const QString &dir) const;
 
     void setSessionStore(SessionStore *store);
     Q_INVOKABLE void loadSession();
