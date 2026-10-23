@@ -4,12 +4,14 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
+#include <QVariantMap>
 #include <QAtomicInt>
 #include <QFutureWatcher>
 
 struct StackResult {
     bool    ok = false;
     QString error;
+    QString warning;
     QString outputPath;
     int     framesUsed = 0;
     int     framesTotal = 0;
@@ -26,6 +28,7 @@ class StackingService : public QObject
     Q_PROPERTY(int     framesUsed    READ framesUsed    NOTIFY resultChanged)
     Q_PROPERTY(int     framesTotal   READ framesTotal   NOTIFY resultChanged)
     Q_PROPERTY(QString lastError     READ lastError     NOTIFY resultChanged)
+    Q_PROPERTY(QString lastWarning   READ lastWarning   NOTIFY resultChanged)
 
 public:
     explicit StackingService(QObject *parent = nullptr);
@@ -38,13 +41,17 @@ public:
     int     framesUsed() const    { return m_framesUsed; }
     int     framesTotal() const   { return m_framesTotal; }
     QString lastError() const     { return m_lastError; }
+    QString lastWarning() const   { return m_lastWarning; }
 
     Q_INVOKABLE void integrate(const QStringList &paths,
                                const QString &referencePath,
                                const QString &targetName,
                                bool align,
                                const QString &combineMethod,
-                               const QString &outputMode);
+                               const QString &outputMode,
+                               bool autoBalance,
+                               const QVariantMap &calibration);
+    Q_INVOKABLE QStringList selectCalibrationFolder();
     Q_INVOKABLE void cancel();
 
 signals:
@@ -68,6 +75,7 @@ private:
     int     m_framesUsed = 0;
     int     m_framesTotal = 0;
     QString m_lastError;
+    QString m_lastWarning;
 
     QAtomicInt m_cancel { 0 };
     QFutureWatcher<StackResult> *m_watcher = nullptr;

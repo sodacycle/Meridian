@@ -34,6 +34,8 @@ public:
     Q_INVOKABLE void filterByTargetAndDate(const QString &target, const QString &date);
     Q_INVOKABLE void showAll();
     Q_INVOKABLE void removeByPath(const QString &path);
+    Q_INVOKABLE QStringList viewPaths() const;
+    Q_INVOKABLE QStringList pathsForTarget(const QString &target) const;
 
 signals:
     void viewChanged();

@@ -830,6 +830,7 @@ ApplicationWindow {
                 Button {
                     text: "Start Fresh"
                     onClicked: {
+                        viewerManager.resetViewer()
                         sessionStore.startFresh()
                         window.addSeestarDirIfPresent()
                         resumeDialog.close()
@@ -838,6 +839,7 @@ ApplicationWindow {
                 Button {
                     text: "Resume Session"
                     onClicked: {
+                        viewerManager.resetViewer()
                         scanner.loadSession()
                         window.addSeestarDirIfPresent()
                         resumeDialog.close()

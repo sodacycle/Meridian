@@ -25,7 +25,7 @@ class FitsPixelReader
 {
 public:
     static FitsPixelData read(const QString &filePath);
-    static FitsColorData readColor(const QString &filePath, bool wantColor);
+    static FitsColorData readColor(const QString &filePath, bool wantColor, bool fullRes = false);
 };
 
 #endif

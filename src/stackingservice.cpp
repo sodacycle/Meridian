@@ -4,7 +4,9 @@
 
 #include <QFile>
 #include <QFileInfo>
+#include <QFileInfoList>
 #include <QDir>
+#include <QFileDialog>
 #include <QDataStream>
 #include <QHash>
 #include <QList>
@@ -321,12 +323,31 @@ void StackingService::cancel()
         m_cancel.storeRelease(1);
 }
 
+QStringList StackingService::selectCalibrationFolder()
+{
+    const QString dir = QFileDialog::getExistingDirectory(nullptr,
+        QStringLiteral("Select a folder of calibration frames"));
+    if (dir.isEmpty())
+        return {};
+
+    static const QStringList filters = { "*.fit", "*.fits", "*.FIT", "*.FITS" };
+    const QFileInfoList fl = QDir(dir).entryInfoList(filters, QDir::Files);
+    QStringList files;
+    files.reserve(fl.size());
+    for (const QFileInfo &fi : fl)
+        files << fi.absoluteFilePath();
+    files.sort(Qt::CaseInsensitive);
+    return files;
+}
+
 void StackingService::integrate(const QStringList &paths,
                                 const QString &referencePath,
                                 const QString &targetName,
                                 bool align,
                                 const QString &combineMethod,
-                                const QString &outputMode)
+                                const QString &outputMode,
+                                bool autoBalance,
+                                const QVariantMap &calibration)
 {
     if (m_stacking)
         return;
@@ -355,17 +376,25 @@ void StackingService::integrate(const QStringList &paths,
     const QString mode = outputMode.trimmed().toLower();
     QList<int> sel;
     QString modeTag;
-    if (mode == "color" || mode == "colour" || mode == "rgb") { sel = {1, 2, 3}; modeTag = "color"; }
+    bool fullRes = false;
+    if (mode == "colorfull" || mode == "colourfull" || mode == "rgbfull") { sel = {1, 2, 3}; modeTag = "color_full"; fullRes = true; }
+    else if (mode == "color" || mode == "colour" || mode == "rgb") { sel = {1, 2, 3}; modeTag = "color"; }
     else if (mode == "r" || mode == "red")                    { sel = {1};       modeTag = "R"; }
     else if (mode == "g" || mode == "green")                  { sel = {2};       modeTag = "G"; }
     else if (mode == "b" || mode == "blue")                   { sel = {3};       modeTag = "B"; }
     else                                                      { sel = {0};       modeTag = "mono"; }
     const bool wantColor = (modeTag != "mono");
+    const bool balance = autoBalance && (sel.size() == 3);
+
+    const QStringList darkPaths = calibration.value("darks").toStringList();
+    const QStringList flatPaths = calibration.value("flats").toStringList();
+    const QStringList biasPaths = calibration.value("bias").toStringList();
 
     m_cancel.storeRelease(0);
     m_stacking = true;
     m_resultPath.clear();
     m_lastError.clear();
+    m_lastWarning.clear();
     m_framesUsed = 0;
     m_framesTotal = frames.size();
     m_done = 0;
@@ -378,7 +407,8 @@ void StackingService::integrate(const QStringList &paths,
     const QString object = targetName;
 
     QFuture<StackResult> future = QtConcurrent::run(
-        [this, frames, reference, object, align, sigmaClip, wantColor, sel, modeTag]() -> StackResult
+        [this, frames, reference, object, align, sigmaClip, wantColor, fullRes, balance, sel, modeTag,
+         darkPaths, flatPaths, biasPaths]() -> StackResult
     {
         StackResult res;
         res.framesTotal = frames.size();
@@ -399,7 +429,7 @@ void StackingService::integrate(const QStringList &paths,
             switch (id) { case 1: return c.r; case 2: return c.g; case 3: return c.b; default: return c.luma; }
         };
 
-        const FitsColorData refData = FitsPixelReader::readColor(reference, wantColor);
+        FitsColorData refData = FitsPixelReader::readColor(reference, wantColor, fullRes);
         if (!refData.valid || refData.width < 2 || refData.height < 2) {
             res.error = "Could not read the reference frame.";
             return res;
@@ -412,6 +442,115 @@ void StackingService::integrate(const QStringList &paths,
         const qint64 N = (qint64)W * H;
         const int C = sel.size();
         const int refChannels = refData.channels;
+
+        // Calibration masters (per-pixel mean), built with the same geometry as
+        // the lights. Darks/flats/bias are optional and independent.
+        auto buildMaster = [&](const QStringList &paths, const char *phaseName, int &matched) -> FitsColorData {
+            matched = 0;
+            FitsColorData m;
+            if (paths.isEmpty()) return m;
+            std::vector<double> sL, sR, sG, sB;
+            int c = 0;
+            for (int i = 0; i < paths.size(); ++i) {
+                if (canceled()) return m;
+                progress(i, paths.size(), phaseName);
+                const FitsColorData d = FitsPixelReader::readColor(paths[i], wantColor, fullRes);
+                if (!d.valid || d.width != W || d.height != H || d.channels != refChannels)
+                    continue;
+                if (c == 0) {
+                    sL.assign((size_t)N, 0.0);
+                    if (refChannels == 3) { sR.assign((size_t)N, 0.0); sG.assign((size_t)N, 0.0); sB.assign((size_t)N, 0.0); }
+                }
+                for (qint64 p = 0; p < N; ++p) sL[(size_t)p] += d.luma[(size_t)p];
+                if (refChannels == 3)
+                    for (qint64 p = 0; p < N; ++p) { sR[(size_t)p]+=d.r[(size_t)p]; sG[(size_t)p]+=d.g[(size_t)p]; sB[(size_t)p]+=d.b[(size_t)p]; }
+                ++c;
+            }
+            if (c == 0) return m;
+            matched = c;
+            m.valid = true; m.width = W; m.height = H; m.channels = refChannels;
+            m.luma.resize((size_t)N);
+            for (qint64 p = 0; p < N; ++p) m.luma[(size_t)p] = (float)(sL[(size_t)p] / c);
+            if (refChannels == 3) {
+                m.r.resize((size_t)N); m.g.resize((size_t)N); m.b.resize((size_t)N);
+                for (qint64 p = 0; p < N; ++p) { m.r[(size_t)p]=(float)(sR[(size_t)p]/c); m.g[(size_t)p]=(float)(sG[(size_t)p]/c); m.b[(size_t)p]=(float)(sB[(size_t)p]/c); }
+            } else {
+                m.r = m.luma;
+            }
+            return m;
+        };
+
+        int darkMatched = 0, biasMatched = 0, flatMatched = 0;
+        FitsColorData mDark = buildMaster(darkPaths, "Master dark", darkMatched);
+        if (canceled()) { res.error = "Canceled."; return res; }
+        FitsColorData mBias = buildMaster(biasPaths, "Master bias", biasMatched);
+        if (canceled()) { res.error = "Canceled."; return res; }
+        FitsColorData mFlat = buildMaster(flatPaths, "Master flat", flatMatched);
+        if (canceled()) { res.error = "Canceled."; return res; }
+
+        // Warn when supplied calibration frames didn't match the lights' geometry.
+        {
+            QStringList notes;
+            auto note = [&](const char *name, const QStringList &paths, int matched) {
+                if (!paths.isEmpty() && matched < paths.size())
+                    notes << QString("%1 %2/%3").arg(name).arg(matched).arg(paths.size());
+            };
+            note("darks", darkPaths, darkMatched);
+            note("flats", flatPaths, flatMatched);
+            note("bias", biasPaths, biasMatched);
+            if (!notes.isEmpty())
+                res.warning = "Some calibration frames didn't match the lights' size and were skipped ("
+                            + notes.join(", ") + " used).";
+        }
+
+        // Correct the flat (subtract bias) and normalise each plane to mean 1,
+        // clamped away from zero so vignetted corners can't blow up on division.
+        if (mFlat.valid) {
+            auto normalizePlane = [&](std::vector<float> &fl, const std::vector<float> *bias) {
+                double sum = 0.0;
+                for (qint64 p = 0; p < N; ++p) {
+                    if (bias) fl[(size_t)p] -= (*bias)[(size_t)p];
+                    sum += fl[(size_t)p];
+                }
+                const double mean = sum / (double)N;
+                if (mean <= 1e-6) { std::fill(fl.begin(), fl.end(), 1.0f); return; }
+                for (qint64 p = 0; p < N; ++p)
+                    fl[(size_t)p] = (float)std::max(0.1, fl[(size_t)p] / mean);
+            };
+            const bool hb = mBias.valid;
+            normalizePlane(mFlat.luma, hb ? &mBias.luma : nullptr);
+            if (refChannels == 3) {
+                normalizePlane(mFlat.r, hb ? &mBias.r : nullptr);
+                normalizePlane(mFlat.g, hb ? &mBias.g : nullptr);
+                normalizePlane(mFlat.b, hb ? &mBias.b : nullptr);
+            }
+        }
+
+        const bool calibrating = mDark.valid || mBias.valid || mFlat.valid;
+
+        // (light - dark[or bias]) / normalised-flat, applied per plane in place.
+        auto applyCalibration = [&](FitsColorData &L) {
+            if (!calibrating) return;
+            auto doPlane = [&](std::vector<float> &lp, const std::vector<float> *dk,
+                               const std::vector<float> *bs, const std::vector<float> *fl) {
+                for (qint64 p = 0; p < N; ++p) {
+                    double v = lp[(size_t)p];
+                    if (dk)      v -= (*dk)[(size_t)p];
+                    else if (bs) v -= (*bs)[(size_t)p];
+                    if (fl)      v /= (*fl)[(size_t)p];
+                    lp[(size_t)p] = (float)v;
+                }
+            };
+            doPlane(L.luma, mDark.valid ? &mDark.luma : nullptr,
+                    mBias.valid ? &mBias.luma : nullptr, mFlat.valid ? &mFlat.luma : nullptr);
+            if (refChannels == 3) {
+                doPlane(L.r, mDark.valid ? &mDark.r : nullptr, mBias.valid ? &mBias.r : nullptr, mFlat.valid ? &mFlat.r : nullptr);
+                doPlane(L.g, mDark.valid ? &mDark.g : nullptr, mBias.valid ? &mBias.g : nullptr, mFlat.valid ? &mFlat.g : nullptr);
+                doPlane(L.b, mDark.valid ? &mDark.b : nullptr, mBias.valid ? &mBias.b : nullptr, mFlat.valid ? &mFlat.b : nullptr);
+            }
+        };
+
+        applyCalibration(refData);
 
         std::vector<StarPoint> refStars;
         if (align) {
@@ -432,9 +571,10 @@ void StackingService::integrate(const QStringList &paths,
             if (frames[i] == reference) { xf[i].ok = true; continue; }
             if (!align)                 { xf[i].ok = true; continue; }
 
-            const FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor);
+            FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor, fullRes);
             if (!d.valid || d.width != W || d.height != H || d.channels != refChannels)
                 continue;
+            applyCalibration(d);
             const std::vector<StarPoint> stars = StarFinder::detectStars(lumaOf(d), 60);
             Transform t = estimateTransform(refStars, stars);
             if (!t.ok) {
@@ -455,9 +595,10 @@ void StackingService::integrate(const QStringList &paths,
             if (!xf[i].ok) continue;
             progress(i, frames.size(), sigmaClip ? "Measuring" : "Combining");
 
-            const FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor);
+            FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor, fullRes);
             if (!d.valid || d.width != W || d.height != H || d.channels != refChannels)
                 continue;
+            applyCalibration(d);
 
             std::vector<const std::vector<float> *> src(C);
             for (int ci = 0; ci < C; ++ci) src[ci] = &planeOf(d, sel[ci]);
@@ -514,9 +655,10 @@ void StackingService::integrate(const QStringList &paths,
                 if (!xf[i].ok) continue;
                 progress(i, frames.size(), "Combining");
 
-                const FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor);
+                FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor, fullRes);
                 if (!d.valid || d.width != W || d.height != H || d.channels != refChannels)
                     continue;
+                applyCalibration(d);
 
                 std::vector<const std::vector<float> *> src(C);
                 for (int ci = 0; ci < C; ++ci) src[ci] = &planeOf(d, sel[ci]);
@@ -555,6 +697,36 @@ void StackingService::integrate(const QStringList &paths,
                 out[k] = clipCnt[k] > 0 ? (float)(clipSum[k] / clipCnt[k]) : (float)mean[k];
         }
 
+        if (balance && C == 3) {
+            // Grey-world white balance: equalise the per-channel medians (which
+            // are dominated by sky background), neutralising the OSC green cast.
+            auto channelMedian = [&](int ci) -> double {
+                const size_t base = (size_t)ci * N;
+                const size_t sampleN = std::min<size_t>((size_t)N, 100000);
+                const double step = (double)N / (double)sampleN;
+                std::vector<float> s(sampleN);
+                for (size_t i = 0; i < sampleN; ++i)
+                    s[i] = out[base + (size_t)(i * step)];
+                std::nth_element(s.begin(), s.begin() + s.size() / 2, s.end());
+                return s[s.size() / 2];
+            };
+            const double m0 = channelMedian(0), m1 = channelMedian(1), m2med = channelMedian(2);
+            if (m0 > 1e-6 && m1 > 1e-6 && m2med > 1e-6) {
+                const double target = (m0 + m1 + m2med) / 3.0;
+                const double sc[3] = {
+                    std::clamp(target / m0, 0.2, 5.0),
+                    std::clamp(target / m1, 0.2, 5.0),
+                    std::clamp(target / m2med, 0.2, 5.0)
+                };
+                for (int ci = 0; ci < 3; ++ci) {
+                    const size_t base = (size_t)ci * N;
+                    const float f = (float)sc[ci];
+                    for (qint64 p = 0; p < N; ++p)
+                        out[base + (size_t)p] *= f;
+                }
+            }
+        }
+
         if (canceled()) { res.error = "Canceled."; return res; }
         progress(frames.size(), frames.size(), "Writing");
 
@@ -568,8 +740,9 @@ void StackingService::integrate(const QStringList &paths,
             refDir.mkpath("stacked");
 
         const QString method = sigmaClip ? "sigma" : "avg";
+        const QString calTag = calibrating ? "_cal" : "";
         const QString outPath = outDir.absoluteFilePath(
-            QString("Stacked_%1_%2f_%3_%4.fit").arg(baseName).arg(used).arg(method).arg(modeTag));
+            QString("Stacked_%1_%2f_%3_%4%5.fit").arg(baseName).arg(used).arg(method).arg(modeTag).arg(calTag));
 
         if (!writeFloatFits(outPath, W, H, C, out, object, used)) {
             res.error = "Could not write the stacked FITS file.";
@@ -593,6 +766,7 @@ void StackingService::onFinished()
     m_framesUsed  = res.framesUsed;
     m_framesTotal = res.framesTotal;
 
+    m_lastWarning = res.warning;
     if (res.ok) {
         m_resultPath = res.outputPath;
         m_lastError.clear();

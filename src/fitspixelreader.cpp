@@ -144,7 +144,7 @@ FitsPixelData FitsPixelReader::read(const QString &filePath)
     return result;
 }
 
-FitsColorData FitsPixelReader::readColor(const QString &filePath, bool wantColor)
+FitsColorData FitsPixelReader::readColor(const QString &filePath, bool wantColor, bool fullRes)
 {
     FitsColorData result;
 
@@ -236,38 +236,87 @@ FitsColorData FitsPixelReader::readColor(const QString &filePath, bool wantColor
         const int pat = (bayerPat == "RGGB") ? 0 : (bayerPat == "GRBG") ? 1
                       : (bayerPat == "GBRG") ? 2 : 3;
 
-        const int W2 = W / 2, H2 = H / 2;
-        result.width  = W2;
-        result.height = H2;
-        result.luma.resize((size_t)W2 * H2);
-        if (wantColor) {
+        if (wantColor && fullRes) {
+            // Full-resolution bilinear demosaic (edge-reflected), producing W x H
+            // R/G/B planes — the same interpolation the viewer uses for display.
+            result.width  = W;
+            result.height = H;
             result.channels = 3;
-            result.r.resize((size_t)W2 * H2);
-            result.g.resize((size_t)W2 * H2);
-            result.b.resize((size_t)W2 * H2);
-        }
-        for (int by = 0; by < H2; ++by) {
-            for (int bx = 0; bx < W2; ++bx) {
-                const int x0 = bx * 2, y0 = by * 2;
-                float red = 0, blue = 0, g1 = 0, g2 = 0; bool haveG1 = false;
-                float sum = 0;
-                for (int dy = 0; dy < 2; ++dy) {
-                    for (int dx = 0; dx < 2; ++dx) {
-                        const float v = px((qint64)(y0 + dy) * W + (x0 + dx));
-                        sum += v;
-                        const int col = bayerTable[pat][(dy << 1) | dx];
-                        if      (col == 0) red = v;
-                        else if (col == 2) blue = v;
-                        else if (!haveG1)  { g1 = v; haveG1 = true; }
-                        else               g2 = v;
+            result.luma.resize((size_t)ppPlane);
+            result.r.resize((size_t)ppPlane);
+            result.g.resize((size_t)ppPlane);
+            result.b.resize((size_t)ppPlane);
+
+            auto at = [&](int x, int y) -> float {
+                const int rx = (x < 0) ? -x : (x >= W ? 2 * W - 2 - x : x);
+                const int ry = (y < 0) ? -y : (y >= H ? 2 * H - 2 - y : y);
+                return px((qint64)ry * W + rx);
+            };
+            auto colAt = [&](int x, int y) -> int {
+                return bayerTable[pat][((y & 1) << 1) | (x & 1)];
+            };
+
+            for (int y = 0; y < H; ++y) {
+                for (int x = 0; x < W; ++x) {
+                    const float p = px((qint64)y * W + x);
+                    const int c = colAt(x, y);
+                    float R, G, B;
+                    if (c == 0) {
+                        R = p;
+                        G = (at(x-1,y) + at(x+1,y) + at(x,y-1) + at(x,y+1)) * 0.25f;
+                        B = (at(x-1,y-1) + at(x+1,y-1) + at(x-1,y+1) + at(x+1,y+1)) * 0.25f;
+                    } else if (c == 2) {
+                        B = p;
+                        G = (at(x-1,y) + at(x+1,y) + at(x,y-1) + at(x,y+1)) * 0.25f;
+                        R = (at(x-1,y-1) + at(x+1,y-1) + at(x-1,y+1) + at(x+1,y+1)) * 0.25f;
+                    } else {
+                        G = p;
+                        const float hv = (at(x-1,y) + at(x+1,y)) * 0.5f;
+                        const float vv = (at(x,y-1) + at(x,y+1)) * 0.5f;
+                        if (colAt(x + 1, y) == 0) { R = hv; B = vv; }
+                        else                      { B = hv; R = vv; }
                     }
+                    const size_t o = (size_t)y * W + x;
+                    result.r[o] = R;
+                    result.g[o] = G;
+                    result.b[o] = B;
+                    result.luma[o] = (R + G + B) / 3.0f;
                 }
-                const size_t o = (size_t)by * W2 + bx;
-                result.luma[o] = sum * 0.25f;
-                if (wantColor) {
-                    result.r[o] = red;
-                    result.g[o] = (g1 + g2) * 0.5f;
-                    result.b[o] = blue;
+            }
+        } else {
+            const int W2 = W / 2, H2 = H / 2;
+            result.width  = W2;
+            result.height = H2;
+            result.luma.resize((size_t)W2 * H2);
+            if (wantColor) {
+                result.channels = 3;
+                result.r.resize((size_t)W2 * H2);
+                result.g.resize((size_t)W2 * H2);
+                result.b.resize((size_t)W2 * H2);
+            }
+            for (int by = 0; by < H2; ++by) {
+                for (int bx = 0; bx < W2; ++bx) {
+                    const int x0 = bx * 2, y0 = by * 2;
+                    float red = 0, blue = 0, g1 = 0, g2 = 0; bool haveG1 = false;
+                    float sum = 0;
+                    for (int dy = 0; dy < 2; ++dy) {
+                        for (int dx = 0; dx < 2; ++dx) {
+                            const float v = px((qint64)(y0 + dy) * W + (x0 + dx));
+                            sum += v;
+                            const int col = bayerTable[pat][(dy << 1) | dx];
+                            if      (col == 0) red = v;
+                            else if (col == 2) blue = v;
+                            else if (!haveG1)  { g1 = v; haveG1 = true; }
+                            else               g2 = v;
+                        }
+                    }
+                    const size_t o = (size_t)by * W2 + bx;
+                    result.luma[o] = sum * 0.25f;
+                    if (wantColor) {
+                        result.r[o] = red;
+                        result.g[o] = (g1 + g2) * 0.5f;
+                        result.b[o] = blue;
+                    }
                 }
             }
         }

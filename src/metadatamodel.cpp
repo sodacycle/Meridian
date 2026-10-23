@@ -160,6 +160,31 @@ void MetadataTableModel::removeByPath(const QString &path)
     emit viewChanged();
 }
 
+QStringList MetadataTableModel::viewPaths() const
+{
+    QStringList paths;
+    paths.reserve(m_view.size());
+    for (int idx : m_view) {
+        const QString p = m_allRows.at(idx).value("Path").toString();
+        if (!p.isEmpty())
+            paths.append(p);
+    }
+    return paths;
+}
+
+QStringList MetadataTableModel::pathsForTarget(const QString &target) const
+{
+    QStringList paths;
+    for (const QVariantMap &row : m_allRows) {
+        if (row.value("Target").toString() == target) {
+            const QString p = row.value("Path").toString();
+            if (!p.isEmpty())
+                paths.append(p);
+        }
+    }
+    return paths;
+}
+
 TargetSummaryModel::TargetSummaryModel(QObject *parent) : QAbstractListModel(parent) {}
 
 int TargetSummaryModel::rowCount(const QModelIndex &parent) const

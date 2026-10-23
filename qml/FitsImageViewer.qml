@@ -52,8 +52,35 @@ Window {
 
     onActiveSectionChanged: if (activeSection === 1) refreshFileList()
 
+    // The Files tab mirrors the File-Level Details list (the metadata model's
+    // current view), but it is not disturbed while a cull or stack is running —
+    // the refresh is deferred and applied once the operation finishes.
+    property bool fileListPending: false
+
+    function busyOp() {
+        return stackingService.stacking
+            || cullingService.analyzing || cullingService.batchAnalyzing || cullingService.recommending
+    }
+
     function refreshFileList() {
-        fitsFilePaths = scanner.listFitsFiles()
+        if (busyOp()) { fileListPending = true; return }
+        fileListPending = false
+        fitsFilePaths = metadataModel.viewPaths()
+    }
+
+    Connections {
+        target: metadataModel
+        function onViewChanged() { viewer.refreshFileList() }
+    }
+    Connections {
+        target: stackingService
+        function onStackingChanged() { if (!viewer.busyOp() && viewer.fileListPending) viewer.refreshFileList() }
+    }
+    Connections {
+        target: cullingService
+        function onBatchAnalyzingChanged() { if (!viewer.busyOp() && viewer.fileListPending) viewer.refreshFileList() }
+        function onAnalyzingChanged()      { if (!viewer.busyOp() && viewer.fileListPending) viewer.refreshFileList() }
+        function onRecommendingChanged()   { if (!viewer.busyOp() && viewer.fileListPending) viewer.refreshFileList() }
     }
 
     function matchingPaths(path, rows) {
@@ -782,7 +809,7 @@ Window {
         StackingView {
             anchors.fill: parent
             visible: viewer.activeSection === 3
-            candidatePaths: viewer.compatiblePaths
+            candidatePaths: viewer.fitsFilePaths
             rejectedSet:    viewer.rejectedSet
             referencePath:  viewer.filePath
             targetName:     viewer.currentTarget

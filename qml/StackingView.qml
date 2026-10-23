@@ -11,10 +11,19 @@ Item {
 
     signal openResultRequested(string path)
 
+    // "shown" = the Files-tab list (current File-Level Details view);
+    // "target" = every scanned frame of the open image's target, across all folders.
+    property string sourceMode: "target"
+    readonly property var effectiveCandidates:
+        (sourceMode === "target" && targetName !== "")
+            ? metadataModel.pathsForTarget(targetName)
+            : candidatePaths
+
     function frameList() {
+        var base = effectiveCandidates
         var out = []
-        for (var i = 0; i < candidatePaths.length; i++) {
-            var p = candidatePaths[i]
+        for (var i = 0; i < base.length; i++) {
+            var p = base[i]
             if (p && !rejectedSet[p]) out.push(p)
         }
         return out
@@ -24,6 +33,13 @@ Item {
     property string combineMethod: "average"
     property bool   alignFrames: true
     property string outputMode: "mono"
+    property bool   autoBalance: true
+    readonly property bool colourOutput: outputMode === "color" || outputMode === "colorfull"
+
+    property bool calibrationEnabled: false
+    property var  darkPaths: []
+    property var  flatPaths: []
+    property var  biasPaths: []
 
     Rectangle { anchors.fill: parent; color: "#1b1b1b" }
 
@@ -47,9 +63,9 @@ Item {
                 width: parent.width
                 wrapMode: Text.WordWrap
                 color: "#9a9a9a"; font.pixelSize: 12
-                text: "Integrate the frames compatible with the open image "
-                      + "(same target, filter, exposure and gear) into a single, deeper image. "
-                      + "Rejected frames are left out automatically."
+                text: "Integrate many frames into a single, deeper image. Choose the source below — "
+                      + "the whole target (every scanned frame of this object, across all folders) or "
+                      + "just the Files-tab list. Culled (rejected) frames are left out automatically."
             }
 
             Rectangle {
@@ -74,9 +90,39 @@ Item {
                     }
                     Row {
                         spacing: 8
+                        Text { text: "Source:"; color: "#8a8a8a"; font.pixelSize: 12
+                               anchors.verticalCenter: parent.verticalCenter }
+                        RadioButton {
+                            id: srcTarget
+                            text: "Entire target"
+                            checked: root.sourceMode === "target"
+                            enabled: !stackingService.stacking && root.targetName !== ""
+                            onCheckedChanged: if (checked) root.sourceMode = "target"
+                            contentItem: Text {
+                                text: srcTarget.text; color: "#dddddd"; font.pixelSize: 12
+                                leftPadding: srcTarget.indicator.width + 4
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                        RadioButton {
+                            id: srcShown
+                            text: "Files shown"
+                            checked: root.sourceMode === "shown"
+                            enabled: !stackingService.stacking
+                            onCheckedChanged: if (checked) root.sourceMode = "shown"
+                            contentItem: Text {
+                                text: srcShown.text; color: "#dddddd"; font.pixelSize: 12
+                                leftPadding: srcShown.indicator.width + 4
+                                verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                    }
+                    Row {
+                        spacing: 8
                         Text { text: "Frames to stack:"; color: "#8a8a8a"; font.pixelSize: 12 }
                         Text {
-                            text: root.availableCount + " of " + root.candidatePaths.length + " compatible"
+                            text: root.availableCount + " of " + root.effectiveCandidates.length
+                                  + (root.sourceMode === "target" ? " for this target (all folders)" : " shown")
                             color: "#dddddd"; font.pixelSize: 12; font.bold: true
                         }
                     }
@@ -175,11 +221,12 @@ Item {
                         width: 220
                         enabled: !stackingService.stacking
                         model: [
-                            { label: "Mono (luminance)", value: "mono" },
-                            { label: "Colour (RGB)",      value: "color" },
-                            { label: "Red channel",       value: "r" },
-                            { label: "Green channel",     value: "g" },
-                            { label: "Blue channel",      value: "b" }
+                            { label: "Mono (luminance)",          value: "mono" },
+                            { label: "Colour — full resolution",  value: "colorfull" },
+                            { label: "Colour — superpixel (½ res)", value: "color" },
+                            { label: "Red channel",               value: "r" },
+                            { label: "Green channel",             value: "g" },
+                            { label: "Blue channel",              value: "b" }
                         ]
                         textRole: "label"
                         valueRole: "value"
@@ -192,10 +239,101 @@ Item {
                     wrapMode: Text.WordWrap
                     text: root.outputMode === "mono"
                           ? "One greyscale (luminance) image. Works for any frame."
-                          : (root.outputMode === "color"
-                             ? "Three-channel RGB image via superpixel debayer (half resolution). Colour frames (OSC) only; raw colour is green-heavy before balancing."
-                             : "A single colour channel, written as a greyscale image. Colour frames (OSC) only.")
+                          : (root.outputMode === "colorfull"
+                             ? "Full-resolution RGB via bilinear demosaic. Colour frames (OSC) only; best detail, slower."
+                             : (root.outputMode === "color"
+                                ? "Three-channel RGB via superpixel debayer (half resolution). Colour frames (OSC) only; faster, lower memory."
+                                : "A single colour channel, written as a greyscale image. Colour frames (OSC) only."))
                     color: "#777777"; font.pixelSize: 11
+                }
+
+                CheckBox {
+                    id: balanceCheck
+                    text: "Auto colour balance"
+                    visible: root.colourOutput
+                    checked: root.autoBalance
+                    onCheckedChanged: root.autoBalance = checked
+                    enabled: !stackingService.stacking
+                    contentItem: Text {
+                        text: balanceCheck.text
+                        color: "#dddddd"; font.pixelSize: 13
+                        leftPadding: balanceCheck.indicator.width + 6
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+                Text {
+                    visible: root.colourOutput
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: "Neutralises the colour cast of raw OSC colour (often green) by equalising "
+                          + "the channel backgrounds (grey-world). Turn off to keep the unbalanced channels."
+                    color: "#777777"; font.pixelSize: 11
+                    leftPadding: 26
+                }
+
+                CheckBox {
+                    id: calibCheck
+                    text: "Apply calibration frames (darks / flats / bias)"
+                    checked: root.calibrationEnabled
+                    onCheckedChanged: root.calibrationEnabled = checked
+                    enabled: !stackingService.stacking
+                    contentItem: Text {
+                        text: calibCheck.text
+                        color: "#dddddd"; font.pixelSize: 13
+                        leftPadding: calibCheck.indicator.width + 6
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+                Text {
+                    width: parent.width
+                    wrapMode: Text.WordWrap
+                    text: "For non-Seestar rigs that need their own calibration. Each set is optional; "
+                          + "the frames must match the lights' dimensions (any that don't are skipped). "
+                          + "Darks are subtracted from each light (or bias, if no darks); flats are "
+                          + "bias-corrected, normalised, and divided out."
+                    color: "#777777"; font.pixelSize: 11
+                    leftPadding: 26
+                }
+
+                Column {
+                    visible: root.calibrationEnabled
+                    width: parent.width
+                    spacing: 6
+                    leftPadding: 26
+
+                    Repeater {
+                        model: [
+                            { label: "Darks", key: "dark" },
+                            { label: "Flats", key: "flat" },
+                            { label: "Bias",  key: "bias" }
+                        ]
+                        delegate: Row {
+                            required property var modelData
+                            spacing: 8
+                            Button {
+                                text: "Choose " + modelData.label + "…"
+                                width: 150
+                                enabled: !stackingService.stacking
+                                onClicked: {
+                                    var l = stackingService.selectCalibrationFolder()
+                                    if (l && l.length > 0) {
+                                        if (modelData.key === "dark") root.darkPaths = l
+                                        else if (modelData.key === "flat") root.flatPaths = l
+                                        else root.biasPaths = l
+                                    }
+                                }
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                readonly property int cnt: modelData.key === "dark" ? root.darkPaths.length
+                                                         : (modelData.key === "flat" ? root.flatPaths.length
+                                                            : root.biasPaths.length)
+                                text: cnt > 0 ? (cnt + " frame" + (cnt !== 1 ? "s" : "")) : "none selected"
+                                color: cnt > 0 ? "#a0e0b0" : "#777777"
+                                font.pixelSize: 12
+                            }
+                        }
+                    }
                 }
             }
 
@@ -211,7 +349,11 @@ Item {
                                                          root.targetName,
                                                          root.alignFrames,
                                                          root.combineMethod,
-                                                         root.outputMode)
+                                                         root.outputMode,
+                                                         root.autoBalance,
+                                                         root.calibrationEnabled
+                                                            ? { darks: root.darkPaths, flats: root.flatPaths, bias: root.biasPaths }
+                                                            : ({}))
                 }
                 Button {
                     text: "Cancel"
@@ -253,6 +395,7 @@ Item {
                 height: resultCol.height + 24
                 radius: 6
                 visible: stackingService.resultPath !== "" || stackingService.lastError !== ""
+                         || stackingService.lastWarning !== ""
                 color: stackingService.lastError !== "" ? "#3a2626" : "#26332a"
                 border.color: stackingService.lastError !== "" ? "#7a3a3a" : "#3a7a4a"
                 border.width: 1
@@ -273,6 +416,12 @@ Item {
                         visible: stackingService.resultPath !== ""
                         text: "✓ Stacked " + stackingService.framesUsed + " frames"
                         color: "#a0e0b0"; font.pixelSize: 13; font.bold: true
+                    }
+                    Text {
+                        visible: stackingService.lastWarning !== ""
+                        width: parent.width; wrapMode: Text.WordWrap
+                        text: "⚠ " + stackingService.lastWarning
+                        color: "#e0c080"; font.pixelSize: 12
                     }
                     Text {
                         visible: stackingService.resultPath !== ""

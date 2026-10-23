@@ -30,7 +30,15 @@ Item {
         manager.openAt(path)
     }
 
+    function dirOf(path) {
+        return path.substring(0, path.lastIndexOf("/"))
+    }
+
     function openAt(path) {
+        // Moving into a different folder starts a fresh thumbnail strip.
+        if (manager.viewedPaths.length > 0 && dirOf(manager.viewedPaths[0]) !== dirOf(path))
+            manager.viewedPaths = []
+
         fitsViewer.fileIndex  = manager.navList.indexOf(path)
         fitsViewer.fileCount  = manager.navList.length
         fitsViewer.isRejected = !!manager.rejectedSet[path]
@@ -41,6 +49,15 @@ Item {
             vp.push(path)
             manager.viewedPaths = vp
         }
+    }
+
+    function resetViewer() {
+        manager.viewedPaths = []
+        manager.navList      = []
+        fitsViewer.fileIndex = -1
+        fitsViewer.fileCount = 0
+        fitsViewer.filePath  = ""
+        fitsViewer.visible   = false
     }
 
     property var rejectedSet: ({})
