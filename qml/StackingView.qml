@@ -116,8 +116,8 @@ Item {
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: "Registers each frame to the reference by detecting stars and "
-                          + "correcting for X/Y shift (dithering, small drift). Turn off only "
+                    text: "Registers each frame to the reference by matching star patterns, "
+                          + "correcting for shift and field rotation (sub-pixel). Turn off only "
                           + "if the frames are already registered."
                     color: "#777777"; font.pixelSize: 11
                     leftPadding: 26

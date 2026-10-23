@@ -238,14 +238,14 @@ The **Stacking** tab of the Image Viewer integrates many sub-exposures of the sa
 
 | Option | Effect |
 |---|---|
-| **Align frames** | Star-based registration: detects stars in each frame and corrects its X/Y shift (dithering, drift) by offset voting. *(Translation only for now — field rotation is a later phase.)* Turn off if the frames are already registered. |
+| **Align frames** | Star-based registration: matches star patterns and corrects for **shift and field rotation** (an affine fit with sub-pixel bilinear resampling), so dithered sets and alt-az field rotation register correctly. Non-matching frames (different target, too few stars) are detected and skipped. Turn off if the frames are already registered. |
 | **Combine → Average** | Plain mean of every frame. Fastest; per-pixel outliers survive. |
 | **Combine → Sigma-clipped average** | Rejects per-pixel values beyond 3σ of the running mean before averaging (hot pixels, satellite/plane trails). Reads each frame twice. |
 | **Output → Mono** | One greyscale (luminance) image. Works for any frame. |
 | **Output → Colour (RGB)** | A three-channel image via superpixel debayer (each 2×2 Bayer cell → one RGB pixel, half resolution). Needs colour (OSC) frames; the Bayer pattern is read from the FITS header. Raw colour is green-heavy until balanced in post. |
 | **Output → Red / Green / Blue** | A single colour channel, saved as a greyscale image. OSC frames only. |
 
-Alignment always runs on the luminance plane, so every channel registers identically. The result is written as a 32-bit float FITS into a `stacked/` subfolder beside the reference frame (`Stacked_<target>_<N>f_<method>_<output>.fit`, carrying a `STACKCNT` header; colour is a 3-plane RGB cube the Viewer renders in colour). A progress bar reports the alignment and combination phases, **Cancel** stops the run, and **Open Result in Viewer** loads the finished stack. Full-resolution demosaic, rotation-aware registration, calibration frames, and automatic colour balance are on the [roadmap](https://github.com/sodacycle/Meridian/wiki/Roadmap).
+Alignment always runs on the luminance plane, so every channel registers identically. The result is written as a 32-bit float FITS into a `stacked/` subfolder beside the reference frame (`Stacked_<target>_<N>f_<method>_<output>.fit`, carrying a `STACKCNT` header; colour is a 3-plane RGB cube the Viewer renders in colour). A progress bar reports the alignment and combination phases, **Cancel** stops the run, and **Open Result in Viewer** loads the finished stack. Registration is rotation-aware (an affine fit with sub-pixel resampling); full-resolution demosaic, automatic colour balance, calibration frames, and drizzle are on the [roadmap](https://github.com/sodacycle/Meridian/wiki/Roadmap).
 
 ---
 

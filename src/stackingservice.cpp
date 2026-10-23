@@ -84,6 +84,152 @@ Offset matchOffset(const std::vector<StarPoint> &ref, const std::vector<StarPoin
     return result;
 }
 
+// Maps a reference coordinate to the frame's coordinate:
+//   frame = [[a, b], [c, d]] * ref + (tx, ty)
+struct Transform {
+    bool   ok = false;
+    double a = 1.0, b = 0.0, c = 0.0, d = 1.0, tx = 0.0, ty = 0.0;
+};
+
+// Gaussian elimination with partial pivoting for a 3x3 system.
+bool solve3x3(const double S[3][3], const double rhs[3], double out[3])
+{
+    double m[3][4];
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) m[i][j] = S[i][j];
+        m[i][3] = rhs[i];
+    }
+    for (int col = 0; col < 3; ++col) {
+        int piv = col;
+        for (int r = col + 1; r < 3; ++r)
+            if (std::abs(m[r][col]) > std::abs(m[piv][col])) piv = r;
+        if (std::abs(m[piv][col]) < 1e-9) return false;
+        for (int j = 0; j < 4; ++j) std::swap(m[col][j], m[piv][j]);
+        for (int r = 0; r < 3; ++r) {
+            if (r == col) continue;
+            const double f = m[r][col] / m[col][col];
+            for (int j = col; j < 4; ++j) m[r][j] -= f * m[col][j];
+        }
+    }
+    for (int i = 0; i < 3; ++i) out[i] = m[i][3] / m[i][i];
+    return true;
+}
+
+// Rotation-aware registration. Each reference star-pair and frame star-pair of
+// similar separation proposes a similarity transform (rotation + scale +
+// translation); the proposal with the most reference stars landing on a frame
+// star wins (a RANSAC-style vote through descriptor-matched pairs), then the
+// inlier correspondences are refined into a full affine by least squares.
+Transform estimateTransform(const std::vector<StarPoint> &ref, const std::vector<StarPoint> &frm)
+{
+    Transform best;
+    const int K = std::min<int>(25, std::min<int>((int)ref.size(), (int)frm.size()));
+    if (K < 3)
+        return best;
+
+    struct Pair { int i, j; double dist; };
+    auto buildPairs = [](const std::vector<StarPoint> &s, int k) {
+        std::vector<Pair> p;
+        p.reserve((size_t)k * (k - 1) / 2);
+        for (int i = 0; i < k; ++i)
+            for (int j = i + 1; j < k; ++j) {
+                const double dx = s[j].x - s[i].x, dy = s[j].y - s[i].y;
+                p.push_back({ i, j, std::sqrt(dx * dx + dy * dy) });
+            }
+        return p;
+    };
+    const std::vector<Pair> rp = buildPairs(ref, K);
+    std::vector<Pair> fp = buildPairs(frm, K);
+    std::sort(fp.begin(), fp.end(), [](const Pair &x, const Pair &y) { return x.dist < y.dist; });
+
+    const double inlierTol2 = 2.5 * 2.5;
+    const int    minInliers = std::max(5, K / 4);
+    const int    acceptInliers = (int)(0.7 * K);
+    const int    maxHypo = 40000;
+
+    int    bestInliers = 0;
+    double bu = 1.0, bv = 0.0, btx = 0.0, bty = 0.0;
+    int    hypo = 0;
+
+    for (const Pair &r : rp) {
+        if (r.dist < 5.0) continue;
+        const double distTol = std::max(2.0, 0.02 * r.dist);
+        int fi = (int)(std::lower_bound(fp.begin(), fp.end(), r.dist - distTol,
+                       [](const Pair &p, double v) { return p.dist < v; }) - fp.begin());
+        for (; fi < (int)fp.size() && fp[fi].dist <= r.dist + distTol; ++fi) {
+            const Pair &f = fp[fi];
+            for (int opt = 0; opt < 2; ++opt) {
+                if (++hypo > maxHypo) { fi = (int)fp.size(); break; }
+                const StarPoint &P1 = ref[r.i], &P2 = ref[r.j];
+                const StarPoint &Q1 = (opt == 0) ? frm[f.i] : frm[f.j];
+                const StarPoint &Q2 = (opt == 0) ? frm[f.j] : frm[f.i];
+                const double rx = P2.x - P1.x, ry = P2.y - P1.y;
+                const double qx = Q2.x - Q1.x, qy = Q2.y - Q1.y;
+                const double rr = rx * rx + ry * ry;
+                if (rr < 1e-6) continue;
+                const double u = (qx * rx + qy * ry) / rr;
+                const double v = (qy * rx - qx * ry) / rr;
+                const double scale2 = u * u + v * v;
+                if (scale2 < 0.25 || scale2 > 4.0) continue;
+                const double tx = Q1.x - (u * P1.x - v * P1.y);
+                const double ty = Q1.y - (v * P1.x + u * P1.y);
+
+                int inl = 0;
+                for (int s = 0; s < K; ++s) {
+                    const double X = u * ref[s].x - v * ref[s].y + tx;
+                    const double Y = v * ref[s].x + u * ref[s].y + ty;
+                    for (int t = 0; t < K; ++t) {
+                        const double ddx = frm[t].x - X, ddy = frm[t].y - Y;
+                        if (ddx * ddx + ddy * ddy < inlierTol2) { ++inl; break; }
+                    }
+                }
+                if (inl > bestInliers) {
+                    bestInliers = inl; bu = u; bv = v; btx = tx; bty = ty;
+                }
+            }
+            if (bestInliers >= acceptInliers) break;
+        }
+        if (bestInliers >= acceptInliers || hypo > maxHypo) break;
+    }
+
+    if (bestInliers < minInliers)
+        return best;
+
+    // Collect inlier correspondences (over all detected stars) and refine to a
+    // full affine by least squares.
+    double Sxx = 0, Sxy = 0, Sx = 0, Syy = 0, Sy = 0, Sn = 0;
+    double bXx = 0, bXy = 0, bX = 0, bYx = 0, bYy = 0, bY = 0;
+    for (size_t s = 0; s < ref.size(); ++s) {
+        const double X = bu * ref[s].x - bv * ref[s].y + btx;
+        const double Y = bv * ref[s].x + bu * ref[s].y + bty;
+        int bt = -1; double bd = inlierTol2;
+        for (size_t t = 0; t < frm.size(); ++t) {
+            const double ddx = frm[t].x - X, ddy = frm[t].y - Y;
+            const double dd = ddx * ddx + ddy * ddy;
+            if (dd < bd) { bd = dd; bt = (int)t; }
+        }
+        if (bt < 0) continue;
+        const double x = ref[s].x, y = ref[s].y;
+        const double fx = frm[bt].x, fy = frm[bt].y;
+        Sxx += x * x; Sxy += x * y; Sx += x; Syy += y * y; Sy += y; Sn += 1;
+        bXx += fx * x; bXy += fx * y; bX += fx;
+        bYx += fy * x; bYy += fy * y; bY += fy;
+    }
+
+    const double S[3][3] = { { Sxx, Sxy, Sx }, { Sxy, Syy, Sy }, { Sx, Sy, Sn } };
+    double sol1[3], sol2[3];
+    const double rhsX[3] = { bXx, bXy, bX };
+    const double rhsY[3] = { bYx, bYy, bY };
+    if (Sn >= 3 && solve3x3(S, rhsX, sol1) && solve3x3(S, rhsY, sol2)) {
+        best.a = sol1[0]; best.b = sol1[1]; best.tx = sol1[2];
+        best.c = sol2[0]; best.d = sol2[1]; best.ty = sol2[2];
+    } else {
+        best.a = bu; best.b = -bv; best.c = bv; best.d = bu; best.tx = btx; best.ty = bty;
+    }
+    best.ok = true;
+    return best;
+}
+
 QByteArray fitsCard(const QString &text)
 {
     QByteArray b = text.toLatin1();
@@ -276,27 +422,26 @@ void StackingService::integrate(const QStringList &paths,
             }
         }
 
-        // Phase 1: per-frame registration offsets (reference is 0,0).
-        std::vector<Offset> offsets(frames.size());
+        // Phase 1: per-frame registration (reference maps to identity). Prefer a
+        // rotation-aware affine fit; fall back to a translation-only match.
+        std::vector<Transform> xf(frames.size());
         for (int i = 0; i < frames.size(); ++i) {
             if (canceled()) { res.error = "Canceled."; return res; }
             progress(i, frames.size(), "Aligning");
 
-            if (frames[i] == reference) {
-                offsets[i].ok = true;
-                offsets[i].dx = 0.0;
-                offsets[i].dy = 0.0;
-                continue;
-            }
-            if (!align) {
-                offsets[i].ok = true;
-                continue;
-            }
+            if (frames[i] == reference) { xf[i].ok = true; continue; }
+            if (!align)                 { xf[i].ok = true; continue; }
+
             const FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor);
             if (!d.valid || d.width != W || d.height != H || d.channels != refChannels)
                 continue;
             const std::vector<StarPoint> stars = StarFinder::detectStars(lumaOf(d), 60);
-            offsets[i] = matchOffset(refStars, stars);
+            Transform t = estimateTransform(refStars, stars);
+            if (!t.ok) {
+                const Offset o = matchOffset(refStars, stars);
+                if (o.ok) { t.ok = true; t.a = 1; t.b = 0; t.c = 0; t.d = 1; t.tx = o.dx; t.ty = o.dy; }
+            }
+            xf[i] = t;
         }
 
         // Phase 2: accumulate per-channel mean (and variance, for sigma clipping).
@@ -307,7 +452,7 @@ void StackingService::integrate(const QStringList &paths,
 
         for (int i = 0; i < frames.size(); ++i) {
             if (canceled()) { res.error = "Canceled."; return res; }
-            if (!offsets[i].ok) continue;
+            if (!xf[i].ok) continue;
             progress(i, frames.size(), sigmaClip ? "Measuring" : "Combining");
 
             const FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor);
@@ -317,21 +462,26 @@ void StackingService::integrate(const QStringList &paths,
             std::vector<const std::vector<float> *> src(C);
             for (int ci = 0; ci < C; ++ci) src[ci] = &planeOf(d, sel[ci]);
 
-            const int rx = (int)std::lround(offsets[i].dx);
-            const int ry = (int)std::lround(offsets[i].dy);
+            const Transform &t = xf[i];
             ++used;
 
             for (int oy = 0; oy < H; ++oy) {
-                const int sy = oy + ry;
-                if (sy < 0 || sy >= H) continue;
                 for (int ox = 0; ox < W; ++ox) {
-                    const int sx = ox + rx;
-                    if (sx < 0 || sx >= W) continue;
+                    const double sx = t.a * ox + t.b * oy + t.tx;
+                    const double sy = t.c * ox + t.d * oy + t.ty;
+                    const int x0 = (int)std::floor(sx), y0 = (int)std::floor(sy);
+                    if (x0 < 0 || y0 < 0 || x0 >= W || y0 >= H) continue;
+                    const int x1 = std::min(x0 + 1, W - 1), y1 = std::min(y0 + 1, H - 1);
+                    const double fx = sx - x0, fy = sy - y0;
+                    const size_t b00 = (size_t)y0 * W + x0, b10 = (size_t)y0 * W + x1;
+                    const size_t b01 = (size_t)y1 * W + x0, b11 = (size_t)y1 * W + x1;
                     const qint64 p = (qint64)oy * W + ox;
-                    const qint64 sp = (qint64)sy * W + sx;
                     const int n = ++cnt[(size_t)p];
                     for (int ci = 0; ci < C; ++ci) {
-                        const double v = (*src[ci])[(size_t)sp];
+                        const std::vector<float> &pl = *src[ci];
+                        const double top = pl[b00] + (pl[b10] - pl[b00]) * fx;
+                        const double bot = pl[b01] + (pl[b11] - pl[b01]) * fx;
+                        const double v = top + (bot - top) * fy;
                         double &mn = mean[(size_t)ci * N + p];
                         const double delta = v - mn;
                         mn += delta / n;
@@ -361,7 +511,7 @@ void StackingService::integrate(const QStringList &paths,
 
             for (int i = 0; i < frames.size(); ++i) {
                 if (canceled()) { res.error = "Canceled."; return res; }
-                if (!offsets[i].ok) continue;
+                if (!xf[i].ok) continue;
                 progress(i, frames.size(), "Combining");
 
                 const FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor);
@@ -371,22 +521,27 @@ void StackingService::integrate(const QStringList &paths,
                 std::vector<const std::vector<float> *> src(C);
                 for (int ci = 0; ci < C; ++ci) src[ci] = &planeOf(d, sel[ci]);
 
-                const int rx = (int)std::lround(offsets[i].dx);
-                const int ry = (int)std::lround(offsets[i].dy);
+                const Transform &t = xf[i];
 
                 for (int oy = 0; oy < H; ++oy) {
-                    const int sy = oy + ry;
-                    if (sy < 0 || sy >= H) continue;
                     for (int ox = 0; ox < W; ++ox) {
-                        const int sx = ox + rx;
-                        if (sx < 0 || sx >= W) continue;
                         const qint64 p = (qint64)oy * W + ox;
                         if (cnt[(size_t)p] < 2) continue;
-                        const qint64 sp = (qint64)sy * W + sx;
+                        const double sx = t.a * ox + t.b * oy + t.tx;
+                        const double sy = t.c * ox + t.d * oy + t.ty;
+                        const int x0 = (int)std::floor(sx), y0 = (int)std::floor(sy);
+                        if (x0 < 0 || y0 < 0 || x0 >= W || y0 >= H) continue;
+                        const int x1 = std::min(x0 + 1, W - 1), y1 = std::min(y0 + 1, H - 1);
+                        const double fx = sx - x0, fy = sy - y0;
+                        const size_t b00 = (size_t)y0 * W + x0, b10 = (size_t)y0 * W + x1;
+                        const size_t b01 = (size_t)y1 * W + x0, b11 = (size_t)y1 * W + x1;
                         for (int ci = 0; ci < C; ++ci) {
+                            const std::vector<float> &pl = *src[ci];
+                            const double top = pl[b00] + (pl[b10] - pl[b00]) * fx;
+                            const double bot = pl[b01] + (pl[b11] - pl[b01]) * fx;
+                            const double v = top + (bot - top) * fy;
                             const size_t cp = (size_t)ci * N + p;
                             const double sigma = std::sqrt(std::max(0.0, m2[cp] / cnt[(size_t)p]));
-                            const double v = (*src[ci])[(size_t)sp];
                             if (sigma <= 0.0 || std::abs(v - mean[cp]) <= kappa * sigma) {
                                 clipSum[cp] += v;
                                 clipCnt[cp] += 1;
