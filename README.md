@@ -11,6 +11,7 @@ Meridian is a desktop application for astrophotographers that organises FITS fil
 - **First-Run Consent** — on first launch, a one-time Access & Privacy window explains the app's internet use (secure location/weather/light-pollution/Wikipedia lookups — no accounts, tracking, or uploads) and file access (reads only folders you add; writes `.mrj` sidecars, the session database, and preferences; deletions go to the Trash). The main window opens only after you agree; no network or location request is made beforehand.
 - **Multi-Folder FITS Scanner** — add any number of root directories; all are scanned in one pass with partial results appearing as each folder finishes. The progress bar shows each file's path as it is scanned, and hitting **Stop** keeps the data for everything scanned up to that point. No Python or external tools required.
 - **Session Database & Resume** — every scan is saved to a local SQLite database, so on the next launch Meridian offers to **resume** the previous session (reloading all data instantly, no rescan) or **start fresh**. Re-scanning a saved folder is **incremental**: unchanged files are skipped and only new or modified files are read, so large libraries refresh in a fraction of the time.
+- **Scales to large libraries** — built and tuned for tens of thousands of frames. On a real **~85,000-frame** library, resident memory was cut from roughly **2.8 GB to 1.8 GB** (~35%) by rendering the file-details table directly from a virtualised C++ model instead of duplicating the dataset in JavaScript, interning metadata keys, and returning freed heap to the OS. Combined with incremental re-scanning, big collections stay responsive. See [Performance & large libraries](#performance--large-libraries).
 - **Image Rejection Persistence** — rejection marks are saved as `.mrj` sidecar files next to your FITS files so culling work survives app restarts. Pre-populated automatically on the next scan.
 - **Target Summary** — aggregates sessions by target object, showing total exposure time, sub counts, filters used, and equipment.
 - **Calibration Summary** — separate view for bias, dark, and flat frames grouped by type and settings, linked to each light-frame session.
@@ -245,6 +246,19 @@ The **Stacking** tab of the Image Viewer integrates many sub-exposures of the sa
 | **Output → Red / Green / Blue** | A single colour channel, saved as a greyscale image. OSC frames only. |
 
 Alignment always runs on the luminance plane, so every channel registers identically. The result is written as a 32-bit float FITS into a `stacked/` subfolder beside the reference frame (`Stacked_<target>_<N>f_<method>_<output>.fit`, carrying a `STACKCNT` header; colour is a 3-plane RGB cube the Viewer renders in colour). A progress bar reports the alignment and combination phases, **Cancel** stops the run, and **Open Result in Viewer** loads the finished stack. Full-resolution demosaic, rotation-aware registration, calibration frames, and automatic colour balance are on the [roadmap](https://github.com/sodacycle/Meridian/wiki/Roadmap).
+
+---
+
+### Performance & large libraries
+
+Meridian is designed to stay usable when your library grows into the tens of thousands of frames — the scale a few seasons with a smart telescope reaches.
+
+- **Measured footprint.** On a real **~85,000-frame** library, resident memory dropped from roughly **2.8 GB to 1.8 GB** (about 35%) after the file-details table was changed to render straight from a **virtualised C++ model** — only the handful of on-screen rows are ever converted to JavaScript objects, instead of handing the whole dataset to the view as a JS array (which had forced every frame, with all its fields, to be materialised and kept in the QML engine).
+- **One copy of the data.** The full metadata set is held once and shared by reference across the table, export, and calendar code rather than deep-copied for each, and metadata column keys are interned so they are stored once instead of per file.
+- **Memory returned to the OS.** On GNU/Linux the heap allocator is capped to a small number of arenas and trimmed back after each scan, so freed memory is actually released rather than retained as fragmentation.
+- **Incremental re-scanning.** Re-scanning a known folder compares each file's modification time and size against the saved session database and re-reads only new or changed files, so adding one night to an 80,000-frame library reads that night's frames, not all 80,000.
+
+Scaling numbers depend on your hardware and dataset; the figures above are from one real library and are illustrative, not a guarantee.
 
 ---
 
