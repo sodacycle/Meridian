@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtCore
 
 Item {
     id: root
@@ -10,6 +11,125 @@ Item {
     property string targetName: ""
 
     signal openResultRequested(string path)
+
+    Settings {
+        category: "stacking"
+        property alias mosaicDecisions: root.mosaicDecisions
+    }
+
+    // Mosaic awareness: the frame set is clustered by pointing (RA/DEC), exactly
+    // as the Culling tab does. When it falls into separate panels the user picks
+    // whether to assemble a mosaic or stack only the open frame's panel.
+    property int    detectedPanels: 1
+    property int    significantPanels: 1
+    property bool   mosaicMode: false
+    property string mosaicDecisions: "{}"
+    readonly property bool mosaicActive: mosaicMode && alignFrames && significantPanels >= 2
+
+    onVisibleChanged:     if (visible) root.refreshMosaic()
+    onSourceModeChanged:  root.refreshMosaic()
+    onTargetNameChanged:  root.refreshMosaic()
+
+    function angSep(a, b) {
+        var dRa = Math.abs(a.ra - b.ra)
+        if (dRa > 180) dRa = 360 - dRa
+        var mdec = (a.dec + b.dec) / 2 * Math.PI / 180
+        var x = dRa * Math.cos(mdec)
+        var y = a.dec - b.dec
+        return Math.sqrt(x * x + y * y)
+    }
+
+    // Clusters a path list into panels at 0.2°, returning per-path panel ids
+    // (aligned to the list), the panel count, and how many panels are populated.
+    function clusterIds(paths) {
+        var coords = metadataModel.pointingsForPaths(paths)
+        var tol = 0.2
+        var panels = []
+        var ids = []
+        for (var i = 0; i < paths.length; i++) {
+            var c = coords[paths[i]]
+            if (!c) { ids.push(-1); continue }
+            var best = -1, bestD = 1e9
+            for (var j = 0; j < panels.length; j++) {
+                var d = angSep(c, panels[j])
+                if (d < tol && d < bestD) { bestD = d; best = j }
+            }
+            if (best === -1) {
+                panels.push({ ra: c.ra, dec: c.dec, n: 1 })
+                best = panels.length - 1
+            } else {
+                var pn = panels[best]
+                pn.ra  = (pn.ra  * pn.n + c.ra)  / (pn.n + 1)
+                pn.dec = (pn.dec * pn.n + c.dec) / (pn.n + 1)
+                pn.n  += 1
+            }
+            ids.push(best)
+        }
+        var sig = 0
+        for (var k = 0; k < panels.length; k++) if (panels[k].n >= 3) sig++
+        return { ids: ids, count: panels.length, significant: sig }
+    }
+
+    function refPanelOf(paths, ids) {
+        var ri = paths.indexOf(root.referencePath)
+        if (ri < 0) ri = 0
+        return (ids.length > ri) ? ids[ri] : -1
+    }
+
+    // The frames that will actually be stacked, plus the panel ids and mosaic
+    // flag to hand the service. Mosaic → every panel; focus → only the open
+    // frame's panel; no mosaic → the whole list unchanged.
+    function stackPlan() {
+        var fl = root.frameList()
+        var info = root.clusterIds(fl)
+        if (root.mosaicActive)
+            return { list: fl, panelIds: info.ids, mosaic: true }
+        if (info.significant >= 2) {
+            var rp = root.refPanelOf(fl, info.ids)
+            var sub = []
+            for (var i = 0; i < fl.length; i++)
+                if (info.ids[i] === rp) sub.push(fl[i])
+            return { list: sub, panelIds: [], mosaic: false }
+        }
+        return { list: fl, panelIds: [], mosaic: false }
+    }
+
+    function mosaicDecisionFor(target) {
+        if (target === "") return ""
+        try {
+            var m = JSON.parse(root.mosaicDecisions || "{}")
+            if (m[target] === true)  return "yes"
+            if (m[target] === false) return "no"
+        } catch (e) {}
+        return ""
+    }
+
+    function setMosaicDecision(target, enabled) {
+        root.mosaicMode = enabled
+        if (target === "") return
+        var m = {}
+        try { m = JSON.parse(root.mosaicDecisions || "{}") } catch (e) { m = {} }
+        m[target] = enabled
+        root.mosaicDecisions = JSON.stringify(m)
+    }
+
+    function refreshMosaic() {
+        if (stackingService.stacking) return
+        var info = root.clusterIds(root.frameList())
+        root.detectedPanels = info.count
+        root.significantPanels = info.significant
+        if (info.significant >= 2) {
+            var decided = root.mosaicDecisionFor(root.targetName)
+            if (decided === "yes")      root.mosaicMode = true
+            else if (decided === "no")  root.mosaicMode = false
+            else if (root.visible && !mosaicDialog.opened) {
+                mosaicDialog.panelCount = info.significant
+                mosaicDialog.open()
+            }
+        } else {
+            root.mosaicMode = false
+        }
+    }
 
     // "shown" = the Files-tab list (current File-Level Details view);
     // "target" = every scanned frame of the open image's target, across all folders.
@@ -36,10 +156,16 @@ Item {
     property bool   autoBalance: true
     readonly property bool colourOutput: outputMode === "color" || outputMode === "colorfull"
 
-    property bool calibrationEnabled: false
+    property bool   calibrationEnabled: false
+    property string calibMode: "auto"       // "auto" = find near lights, "manual" = choose folders
+    property bool   calibProbed: false
     property var  darkPaths: []
     property var  flatPaths: []
     property var  biasPaths: []
+
+    function clearCalibration() {
+        root.darkPaths = []; root.flatPaths = []; root.biasPaths = []; root.calibProbed = false
+    }
 
     Rectangle { anchors.fill: parent; color: "#1b1b1b" }
 
@@ -136,6 +262,67 @@ Item {
                             color: "#dddddd"; font.pixelSize: 12
                             elide: Text.ElideMiddle
                         }
+                    }
+                }
+            }
+
+            Rectangle {
+                visible: root.significantPanels >= 2
+                width: parent.width
+                height: mosaicCol.height + 24
+                radius: 6; color: "#2a2620"; border.color: "#6a5a3a"; border.width: 1
+
+                Column {
+                    id: mosaicCol
+                    anchors.left: parent.left; anchors.right: parent.right
+                    anchors.top: parent.top; anchors.margins: 12
+                    spacing: 8
+
+                    Text {
+                        text: "◈ Mosaic detected — " + root.significantPanels + " panels"
+                        color: "#e0c080"; font.pixelSize: 13; font.bold: true
+                    }
+                    Text {
+                        width: parent.width; wrapMode: Text.WordWrap
+                        text: "These frames cover " + root.significantPanels + " separate pointings. Assemble "
+                              + "them into one mosaic, or stack only the panel the open frame belongs to."
+                        color: "#b9a87a"; font.pixelSize: 11
+                    }
+                    RadioButton {
+                        id: mosaicAll
+                        text: "Stack as mosaic (combine all panels)"
+                        checked: root.mosaicMode
+                        enabled: !stackingService.stacking && root.alignFrames
+                        onCheckedChanged: if (checked) root.setMosaicDecision(root.targetName, true)
+                        contentItem: Text {
+                            text: mosaicAll.text; color: "#dddddd"; font.pixelSize: 12
+                            leftPadding: mosaicAll.indicator.width + 6; verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+                    RadioButton {
+                        id: mosaicOne
+                        text: "Focus on one panel (the open frame's)"
+                        checked: !root.mosaicMode
+                        enabled: !stackingService.stacking
+                        onCheckedChanged: if (checked) root.setMosaicDecision(root.targetName, false)
+                        contentItem: Text {
+                            text: mosaicOne.text; color: "#dddddd"; font.pixelSize: 12
+                            leftPadding: mosaicOne.indicator.width + 6; verticalAlignment: Text.AlignVCenter
+                        }
+                    }
+                    Text {
+                        visible: root.mosaicMode && !root.alignFrames
+                        width: parent.width; wrapMode: Text.WordWrap
+                        text: "Mosaic assembly needs alignment — turn on “Align frames” below."
+                        color: "#c08040"; font.pixelSize: 11
+                    }
+                    Text {
+                        visible: root.mosaicActive
+                        width: parent.width; wrapMode: Text.WordWrap
+                        text: "Panels are tied together by the stars they share in their overlaps; any "
+                              + "panel that overlaps none of the others is left out. Memory grows with the "
+                              + "mosaic's total area."
+                        color: "#8a7f5a"; font.pixelSize: 11
                     }
                 }
             }
@@ -287,10 +474,10 @@ Item {
                 Text {
                     width: parent.width
                     wrapMode: Text.WordWrap
-                    text: "For non-Seestar rigs that need their own calibration. Each set is optional; "
-                          + "the frames must match the lights' dimensions (any that don't are skipped). "
-                          + "Darks are subtracted from each light (or bias, if no darks); flats are "
-                          + "bias-corrected, normalised, and divided out."
+                    text: "For non-Seestar rigs that need their own calibration. Darks are subtracted "
+                          + "from each light (or bias, if no darks); flats are bias-corrected, normalised, "
+                          + "and divided out. Masters use a sigma-clipped mean. Frames that don't match the "
+                          + "lights' size are skipped (the result panel reports it)."
                     color: "#777777"; font.pixelSize: 11
                     leftPadding: 26
                 }
@@ -300,6 +487,54 @@ Item {
                     width: parent.width
                     spacing: 6
                     leftPadding: 26
+
+                    Row {
+                        spacing: 16
+                        RadioButton {
+                            id: calAuto
+                            text: "Auto-match near lights"
+                            checked: root.calibMode === "auto"
+                            enabled: !stackingService.stacking
+                            onCheckedChanged: if (checked) { root.calibMode = "auto"; root.clearCalibration() }
+                            contentItem: Text {
+                                text: calAuto.text; color: "#dddddd"; font.pixelSize: 12
+                                leftPadding: calAuto.indicator.width + 4; verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                        RadioButton {
+                            id: calManual
+                            text: "Choose folders"
+                            checked: root.calibMode === "manual"
+                            enabled: !stackingService.stacking
+                            onCheckedChanged: if (checked) { root.calibMode = "manual"; root.clearCalibration() }
+                            contentItem: Text {
+                                text: calManual.text; color: "#dddddd"; font.pixelSize: 12
+                                leftPadding: calManual.indicator.width + 4; verticalAlignment: Text.AlignVCenter
+                            }
+                        }
+                    }
+
+                    Button {
+                        visible: root.calibMode === "auto"
+                        text: "Find matching calibration"
+                        enabled: !stackingService.stacking && root.frameList().length > 0
+                        onClicked: {
+                            var m = stackingService.autoMatchCalibration(root.frameList())
+                            root.darkPaths = (m && m.darks) ? m.darks : []
+                            root.flatPaths = (m && m.flats) ? m.flats : []
+                            root.biasPaths = (m && m.bias)  ? m.bias  : []
+                            root.calibProbed = true
+                        }
+                    }
+                    Text {
+                        visible: root.calibMode === "auto" && root.calibProbed
+                        width: parent.width; wrapMode: Text.WordWrap
+                        readonly property int total: root.darkPaths.length + root.flatPaths.length + root.biasPaths.length
+                        text: total > 0
+                              ? "Looks in darks/flats/bias folders beside the lights, matching darks by exposure/temperature and all by size."
+                              : "No matching calibration frames found in darks/flats/bias folders beside the lights."
+                        color: total > 0 ? "#777777" : "#c08040"; font.pixelSize: 11
+                    }
 
                     Repeater {
                         model: [
@@ -311,6 +546,7 @@ Item {
                             required property var modelData
                             spacing: 8
                             Button {
+                                visible: root.calibMode === "manual"
                                 text: "Choose " + modelData.label + "…"
                                 width: 150
                                 enabled: !stackingService.stacking
@@ -328,7 +564,7 @@ Item {
                                 readonly property int cnt: modelData.key === "dark" ? root.darkPaths.length
                                                          : (modelData.key === "flat" ? root.flatPaths.length
                                                             : root.biasPaths.length)
-                                text: cnt > 0 ? (cnt + " frame" + (cnt !== 1 ? "s" : "")) : "none selected"
+                                text: modelData.label + ": " + (cnt > 0 ? (cnt + " frame" + (cnt !== 1 ? "s" : "")) : "none")
                                 color: cnt > 0 ? "#a0e0b0" : "#777777"
                                 font.pixelSize: 12
                             }
@@ -342,18 +578,25 @@ Item {
 
                 Button {
                     id: stackBtn
-                    text: stackingService.stacking ? "Stacking…" : "Integrate"
+                    text: stackingService.stacking
+                          ? "Stacking…"
+                          : (root.mosaicActive ? "Integrate Mosaic" : "Integrate")
                     enabled: !stackingService.stacking && root.availableCount >= 2
-                    onClicked: stackingService.integrate(root.frameList(),
-                                                         root.referencePath,
-                                                         root.targetName,
-                                                         root.alignFrames,
-                                                         root.combineMethod,
-                                                         root.outputMode,
-                                                         root.autoBalance,
-                                                         root.calibrationEnabled
-                                                            ? { darks: root.darkPaths, flats: root.flatPaths, bias: root.biasPaths }
-                                                            : ({}))
+                    onClicked: {
+                        var plan = root.stackPlan()
+                        stackingService.integrate(plan.list,
+                                                   root.referencePath,
+                                                   root.targetName,
+                                                   root.alignFrames,
+                                                   root.combineMethod,
+                                                   root.outputMode,
+                                                   root.autoBalance,
+                                                   root.calibrationEnabled
+                                                      ? { darks: root.darkPaths, flats: root.flatPaths, bias: root.biasPaths }
+                                                      : ({}),
+                                                   plan.panelIds,
+                                                   plan.mosaic)
+                    }
                 }
                 Button {
                     text: "Cancel"
@@ -434,6 +677,52 @@ Item {
                         text: "Open Result in Viewer"
                         onClicked: root.openResultRequested(stackingService.resultPath)
                     }
+                }
+            }
+        }
+    }
+
+    Dialog {
+        id: mosaicDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: "Mosaic Detected"
+
+        property int panelCount: 0
+
+        Column {
+            spacing: 12
+            width: 440
+
+            Text {
+                width: parent.width
+                text: "The frames for " + (root.targetName !== "" ? "“" + root.targetName + "”" : "this target")
+                      + " cover " + mosaicDialog.panelCount + " separate pointings, so this looks like a mosaic."
+                color: "#dddddd"; wrapMode: Text.WordWrap; font.pixelSize: 13
+            }
+            Text {
+                width: parent.width
+                text: "Stack as a mosaic to register the panels by their shared stars and assemble one wide image, "
+                      + "or focus on a single panel to stack only the frames that share the open frame's pointing."
+                color: "#9a9a9a"; wrapMode: Text.WordWrap; font.pixelSize: 12
+            }
+            Text {
+                width: parent.width
+                text: "Your choice is remembered for this target. You can change it on the Stacking screen."
+                color: "#9a9a9a"; wrapMode: Text.WordWrap; font.pixelSize: 11; opacity: 0.8
+            }
+            Row {
+                spacing: 8
+                anchors.right: parent.right
+                Button {
+                    text: "Focus on one panel"
+                    onClicked: { root.setMosaicDecision(root.targetName, false); mosaicDialog.close() }
+                }
+                Button {
+                    text: "Stack as Mosaic"
+                    highlighted: true
+                    onClicked: { root.setMosaicDecision(root.targetName, true); mosaicDialog.close() }
                 }
             }
         }

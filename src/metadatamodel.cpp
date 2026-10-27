@@ -185,6 +185,27 @@ QStringList MetadataTableModel::pathsForTarget(const QString &target) const
     return paths;
 }
 
+QVariantMap MetadataTableModel::pointingsForPaths(const QStringList &paths) const
+{
+    QSet<QString> wanted(paths.cbegin(), paths.cend());
+    QVariantMap out;
+    for (const QVariantMap &row : m_allRows) {
+        const QString p = row.value("Path").toString();
+        if (p.isEmpty() || !wanted.contains(p))
+            continue;
+        bool okRa = false, okDec = false;
+        const double ra  = row.value("RA").toString().toDouble(&okRa);
+        const double dec = row.value("DEC").toString().toDouble(&okDec);
+        if (!okRa || !okDec)
+            continue;
+        QVariantMap c;
+        c["ra"]  = ra;
+        c["dec"] = dec;
+        out[p] = c;
+    }
+    return out;
+}
+
 TargetSummaryModel::TargetSummaryModel(QObject *parent) : QAbstractListModel(parent) {}
 
 int TargetSummaryModel::rowCount(const QModelIndex &parent) const

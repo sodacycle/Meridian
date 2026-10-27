@@ -36,6 +36,7 @@ public:
     Q_INVOKABLE void removeByPath(const QString &path);
     Q_INVOKABLE QStringList viewPaths() const;
     Q_INVOKABLE QStringList pathsForTarget(const QString &target) const;
+    Q_INVOKABLE QVariantMap  pointingsForPaths(const QStringList &paths) const;
 
 signals:
     void viewChanged();

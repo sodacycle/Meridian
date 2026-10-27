@@ -1,6 +1,8 @@
 #include "stackingservice.h"
 #include "fitspixelreader.h"
 #include "starfinder.h"
+#include "fitsparser.h"
+#include "fitsscanner.h"
 
 #include <QFile>
 #include <QFileInfo>
@@ -9,6 +11,7 @@
 #include <QFileDialog>
 #include <QDataStream>
 #include <QHash>
+#include <QSet>
 #include <QList>
 #include <QDateTime>
 #include <QRegularExpression>
@@ -232,6 +235,33 @@ Transform estimateTransform(const std::vector<StarPoint> &ref, const std::vector
     return best;
 }
 
+// Affine composition: result maps x -> A(B(x)).
+Transform composeT(const Transform &A, const Transform &B)
+{
+    Transform r;
+    r.ok = A.ok && B.ok;
+    r.a = A.a * B.a + A.b * B.c;
+    r.b = A.a * B.b + A.b * B.d;
+    r.c = A.c * B.a + A.d * B.c;
+    r.d = A.c * B.b + A.d * B.d;
+    r.tx = A.a * B.tx + A.b * B.ty + A.tx;
+    r.ty = A.c * B.tx + A.d * B.ty + A.ty;
+    return r;
+}
+
+bool invertT(const Transform &T, Transform &out)
+{
+    const double det = T.a * T.d - T.b * T.c;
+    if (std::abs(det) < 1e-9)
+        return false;
+    out.a =  T.d / det; out.b = -T.b / det;
+    out.c = -T.c / det; out.d =  T.a / det;
+    out.tx = -(out.a * T.tx + out.b * T.ty);
+    out.ty = -(out.c * T.tx + out.d * T.ty);
+    out.ok = true;
+    return true;
+}
+
 QByteArray fitsCard(const QString &text)
 {
     QByteArray b = text.toLatin1();
@@ -340,6 +370,80 @@ QStringList StackingService::selectCalibrationFolder()
     return files;
 }
 
+QVariantMap StackingService::autoMatchCalibration(const QStringList &lightPaths)
+{
+    QVariantMap result;
+    QStringList darks, flats, bias;
+    if (lightPaths.isEmpty())
+        return result;
+
+    // Reference light: exposure, temperature, and raw dimensions.
+    const QHash<QString, QVariant> refHdr = FitsParser::parseHeader(lightPaths.first());
+    const double lightExp = FitsScanner::anyField(refHdr, {"EXPTIME", "EXPOSURE", "EXPOSURE_TIME"}, "0").toDouble();
+    const int    lw = FitsScanner::anyField(refHdr, {"NAXIS1"}, "0").toInt();
+    const int    lh = FitsScanner::anyField(refHdr, {"NAXIS2"}, "0").toInt();
+    bool         lightHasTemp = false;
+    const double lightTemp = FitsScanner::anyField(refHdr, {"CCD-TEMP", "CCD_TEMP"}, "").toDouble(&lightHasTemp);
+    if (lw <= 0 || lh <= 0)
+        return result;
+
+    // Candidate calibration folders: darks/flats/bias sitting beside the lights
+    // (sibling folders, and one directory up — e.g. a lights/ folder's parent).
+    QSet<QString> darkDirs, flatDirs, biasDirs;
+    auto addCandidates = [&](const QString &base) {
+        const QDir d(base);
+        const QStringList subs = d.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        for (const QString &s : subs) {
+            const QString low = s.toLower();
+            const QString abs = d.absoluteFilePath(s);
+            if (low == "darks" || low == "dark")        darkDirs.insert(abs);
+            else if (low == "flats" || low == "flat")   flatDirs.insert(abs);
+            else if (low == "bias" || low == "biases")  biasDirs.insert(abs);
+        }
+    };
+    QSet<QString> lightDirs;
+    for (const QString &p : lightPaths)
+        lightDirs.insert(QFileInfo(p).absolutePath());
+    for (const QString &ld : lightDirs) {
+        addCandidates(ld);
+        addCandidates(QFileInfo(ld).absolutePath());
+    }
+
+    static const QStringList filters = { "*.fit", "*.fits", "*.FIT", "*.FITS" };
+    auto gather = [&](const QSet<QString> &dirs, bool matchExposure, QStringList &out) {
+        for (const QString &dir : dirs) {
+            const QFileInfoList fl = QDir(dir).entryInfoList(filters, QDir::Files);
+            for (const QFileInfo &fi : fl) {
+                const QHash<QString, QVariant> h = FitsParser::parseHeader(fi.absoluteFilePath());
+                if (FitsScanner::anyField(h, {"NAXIS1"}, "0").toInt() != lw ||
+                    FitsScanner::anyField(h, {"NAXIS2"}, "0").toInt() != lh)
+                    continue;
+                if (matchExposure) {
+                    const double e = FitsScanner::anyField(h, {"EXPTIME", "EXPOSURE", "EXPOSURE_TIME"}, "0").toDouble();
+                    if (std::abs(e - lightExp) > std::max(0.5, 0.05 * lightExp))
+                        continue;
+                    bool hasT = false;
+                    const double t = FitsScanner::anyField(h, {"CCD-TEMP", "CCD_TEMP"}, "").toDouble(&hasT);
+                    if (lightHasTemp && hasT && std::abs(t - lightTemp) > 5.0)
+                        continue;
+                }
+                out << fi.absoluteFilePath();
+            }
+        }
+    };
+    gather(darkDirs, true, darks);
+    gather(flatDirs, false, flats);
+    gather(biasDirs, false, bias);
+
+    darks.sort(Qt::CaseInsensitive);
+    flats.sort(Qt::CaseInsensitive);
+    bias.sort(Qt::CaseInsensitive);
+    result["darks"] = darks;
+    result["flats"] = flats;
+    result["bias"]  = bias;
+    return result;
+}
+
 void StackingService::integrate(const QStringList &paths,
                                 const QString &referencePath,
                                 const QString &targetName,
@@ -347,13 +451,27 @@ void StackingService::integrate(const QStringList &paths,
                                 const QString &combineMethod,
                                 const QString &outputMode,
                                 bool autoBalance,
-                                const QVariantMap &calibration)
+                                const QVariantMap &calibration,
+                                const QVariantList &panelIds,
+                                bool mosaic)
 {
     if (m_stacking)
         return;
 
-    QStringList frames = paths;
-    frames.removeAll(QString());
+    // Build the frame list and its parallel panel assignment in lockstep, so
+    // dropping blanks keeps the two aligned. Panels only matter for mosaics.
+    const bool havePanels = mosaic && align && panelIds.size() == paths.size();
+    QStringList frames;
+    std::vector<int> panels;
+    frames.reserve(paths.size());
+    panels.reserve(paths.size());
+    for (int i = 0; i < paths.size(); ++i) {
+        if (paths[i].isEmpty())
+            continue;
+        frames << paths[i];
+        panels.push_back(havePanels ? panelIds[i].toInt() : 0);
+    }
+    const bool mosaicRun = havePanels && frames.size() >= 2;
     if (frames.size() < 2) {
         m_resultPath.clear();
         m_framesUsed = 0;
@@ -367,6 +485,8 @@ void StackingService::integrate(const QStringList &paths,
     QString reference = referencePath;
     if (reference.isEmpty() || !frames.contains(reference))
         reference = frames.first();
+
+    const int refPanel = mosaicRun ? panels[frames.indexOf(reference)] : 0;
 
     const bool sigmaClip = (combineMethod.compare("sigma", Qt::CaseInsensitive) == 0
                             || combineMethod.contains("sigma", Qt::CaseInsensitive));
@@ -408,7 +528,7 @@ void StackingService::integrate(const QStringList &paths,
 
     QFuture<StackResult> future = QtConcurrent::run(
         [this, frames, reference, object, align, sigmaClip, wantColor, fullRes, balance, sel, modeTag,
-         darkPaths, flatPaths, biasPaths]() -> StackResult
+         darkPaths, flatPaths, biasPaths, panels, mosaicRun, refPanel]() -> StackResult
     {
         StackResult res;
         res.framesTotal = frames.size();
@@ -443,40 +563,79 @@ void StackingService::integrate(const QStringList &paths,
         const int C = sel.size();
         const int refChannels = refData.channels;
 
-        // Calibration masters (per-pixel mean), built with the same geometry as
-        // the lights. Darks/flats/bias are optional and independent.
+        // Calibration masters by per-pixel 3-sigma-clipped mean (robust to hot
+        // pixels and cosmic rays), built with the same geometry as the lights.
+        // Each set is optional and independent. Plane 0 = luma, 1/2/3 = R/G/B.
+        const int masterPlanes = (refChannels == 3) ? 4 : 1;
+        auto srcPlane = [](const FitsColorData &d, int k) -> const std::vector<float> & {
+            switch (k) { case 1: return d.r; case 2: return d.g; case 3: return d.b; default: return d.luma; }
+        };
         auto buildMaster = [&](const QStringList &paths, const char *phaseName, int &matched) -> FitsColorData {
             matched = 0;
             FitsColorData m;
             if (paths.isEmpty()) return m;
-            std::vector<double> sL, sR, sG, sB;
-            int c = 0;
+
+            std::vector<std::vector<double>> mn(masterPlanes), m2(masterPlanes);
+            for (int k = 0; k < masterPlanes; ++k) { mn[k].assign((size_t)N, 0.0); m2[k].assign((size_t)N, 0.0); }
+
+            int seen = 0;
             for (int i = 0; i < paths.size(); ++i) {
                 if (canceled()) return m;
                 progress(i, paths.size(), phaseName);
                 const FitsColorData d = FitsPixelReader::readColor(paths[i], wantColor, fullRes);
                 if (!d.valid || d.width != W || d.height != H || d.channels != refChannels)
                     continue;
-                if (c == 0) {
-                    sL.assign((size_t)N, 0.0);
-                    if (refChannels == 3) { sR.assign((size_t)N, 0.0); sG.assign((size_t)N, 0.0); sB.assign((size_t)N, 0.0); }
+                ++seen;
+                for (int k = 0; k < masterPlanes; ++k) {
+                    const std::vector<float> &pl = srcPlane(d, k);
+                    std::vector<double> &mk = mn[k];
+                    std::vector<double> &vk = m2[k];
+                    for (qint64 p = 0; p < N; ++p) {
+                        const double v = pl[(size_t)p];
+                        const double delta = v - mk[(size_t)p];
+                        mk[(size_t)p] += delta / seen;
+                        vk[(size_t)p] += delta * (v - mk[(size_t)p]);
+                    }
                 }
-                for (qint64 p = 0; p < N; ++p) sL[(size_t)p] += d.luma[(size_t)p];
-                if (refChannels == 3)
-                    for (qint64 p = 0; p < N; ++p) { sR[(size_t)p]+=d.r[(size_t)p]; sG[(size_t)p]+=d.g[(size_t)p]; sB[(size_t)p]+=d.b[(size_t)p]; }
-                ++c;
             }
-            if (c == 0) return m;
-            matched = c;
+            if (seen == 0) return m;
+            matched = seen;
+
+            std::vector<std::vector<double>> csum(masterPlanes);
+            std::vector<std::vector<int>>    ccnt(masterPlanes);
+            for (int k = 0; k < masterPlanes; ++k) { csum[k].assign((size_t)N, 0.0); ccnt[k].assign((size_t)N, 0); }
+
+            const double kappa = 3.0;
+            for (int i = 0; i < paths.size(); ++i) {
+                if (canceled()) return m;
+                const FitsColorData d = FitsPixelReader::readColor(paths[i], wantColor, fullRes);
+                if (!d.valid || d.width != W || d.height != H || d.channels != refChannels)
+                    continue;
+                for (int k = 0; k < masterPlanes; ++k) {
+                    const std::vector<float> &pl = srcPlane(d, k);
+                    for (qint64 p = 0; p < N; ++p) {
+                        const double sigma = std::sqrt(std::max(0.0, m2[k][(size_t)p] / seen));
+                        const double v = pl[(size_t)p];
+                        if (sigma <= 0.0 || std::abs(v - mn[k][(size_t)p]) <= kappa * sigma) {
+                            csum[k][(size_t)p] += v;
+                            ccnt[k][(size_t)p] += 1;
+                        }
+                    }
+                }
+            }
+
+            auto finishPlane = [&](std::vector<float> &out, int k) {
+                out.resize((size_t)N);
+                for (qint64 p = 0; p < N; ++p)
+                    out[(size_t)p] = ccnt[k][(size_t)p] > 0
+                        ? (float)(csum[k][(size_t)p] / ccnt[k][(size_t)p])
+                        : (float)mn[k][(size_t)p];
+            };
+
             m.valid = true; m.width = W; m.height = H; m.channels = refChannels;
-            m.luma.resize((size_t)N);
-            for (qint64 p = 0; p < N; ++p) m.luma[(size_t)p] = (float)(sL[(size_t)p] / c);
-            if (refChannels == 3) {
-                m.r.resize((size_t)N); m.g.resize((size_t)N); m.b.resize((size_t)N);
-                for (qint64 p = 0; p < N; ++p) { m.r[(size_t)p]=(float)(sR[(size_t)p]/c); m.g[(size_t)p]=(float)(sG[(size_t)p]/c); m.b[(size_t)p]=(float)(sB[(size_t)p]/c); }
-            } else {
-                m.r = m.luma;
-            }
+            finishPlane(m.luma, 0);
+            if (refChannels == 3) { finishPlane(m.r, 1); finishPlane(m.g, 2); finishPlane(m.b, 3); }
+            else                  { m.r = m.luma; }
             return m;
         };
 
@@ -560,39 +719,206 @@ void StackingService::integrate(const QStringList &paths,
                 return res;
             }
         }
+        const int refIndex = frames.indexOf(reference);
 
-        // Phase 1: per-frame registration (reference maps to identity). Prefer a
-        // rotation-aware affine fit; fall back to a translation-only match.
-        std::vector<Transform> xf(frames.size());
-        for (int i = 0; i < frames.size(); ++i) {
-            if (canceled()) { res.error = "Canceled."; return res; }
-            progress(i, frames.size(), "Aligning");
+        // Output canvas and the per-frame output->source map. For a single field
+        // the canvas is the reference frame's own grid and F[i] registers frame i
+        // onto it. For a mosaic the canvas is enlarged to hold every placed panel
+        // and F[i] folds the panel's position into that same output->frame map.
+        int    Wc = W, Hc = H;
+        double padX = 0.0, padY = 0.0;
+        std::vector<Transform> F(frames.size());
 
-            if (frames[i] == reference) { xf[i].ok = true; continue; }
-            if (!align)                 { xf[i].ok = true; continue; }
+        // Per-frame, per-output-channel additive background offset. Zero for a
+        // single field; for a mosaic it lifts each panel to a common background
+        // level so the panel-to-panel steps disappear where they overlap.
+        std::vector<std::vector<double>> frameOffset(frames.size(), std::vector<double>(C, 0.0));
 
-            FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor, fullRes);
-            if (!d.valid || d.width != W || d.height != H || d.channels != refChannels)
-                continue;
-            applyCalibration(d);
-            const std::vector<StarPoint> stars = StarFinder::detectStars(lumaOf(d), 60);
-            Transform t = estimateTransform(refStars, stars);
-            if (!t.ok) {
-                const Offset o = matchOffset(refStars, stars);
-                if (o.ok) { t.ok = true; t.a = 1; t.b = 0; t.c = 0; t.d = 1; t.tx = o.dx; t.ty = o.dy; }
+        if (!mosaicRun) {
+            // Phase 1: per-frame registration (reference maps to identity). Prefer a
+            // rotation-aware affine fit; fall back to a translation-only match.
+            for (int i = 0; i < frames.size(); ++i) {
+                if (canceled()) { res.error = "Canceled."; return res; }
+                progress(i, frames.size(), "Aligning");
+
+                if (frames[i] == reference) { F[i].ok = true; continue; }
+                if (!align)                 { F[i].ok = true; continue; }
+
+                FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor, fullRes);
+                if (!d.valid || d.width != W || d.height != H || d.channels != refChannels)
+                    continue;
+                applyCalibration(d);
+                const std::vector<StarPoint> stars = StarFinder::detectStars(lumaOf(d), 60);
+                Transform t = estimateTransform(refStars, stars);
+                if (!t.ok) {
+                    const Offset o = matchOffset(refStars, stars);
+                    if (o.ok) { t.ok = true; t.a = 1; t.b = 0; t.c = 0; t.d = 1; t.tx = o.dx; t.ty = o.dy; }
+                }
+                F[i] = t;
             }
-            xf[i] = t;
+        } else {
+            // Mosaic placement. Each panel is tied, through the stars it shares
+            // with an already-placed panel, into the reference panel's coordinate
+            // frame (a star-based spanning tree rooted at the open image's panel).
+            // Panels that share no stars with any placed panel are left out and
+            // reported. Pure pixel geometry — no WCS, no pointing-to-pixel guess.
+            QList<int> panelList;
+            for (int pid : panels) if (!panelList.contains(pid)) panelList << pid;
+
+            QHash<int, int> panelAnchor;            // panel id -> an anchor frame index
+            for (int i = 0; i < frames.size(); ++i)
+                if (!panelAnchor.contains(panels[i])) panelAnchor.insert(panels[i], i);
+
+            auto starsOfFrame = [&](int fi) -> std::vector<StarPoint> {
+                if (fi == refIndex) return refStars;
+                FitsColorData d = FitsPixelReader::readColor(frames[fi], wantColor, fullRes);
+                if (!d.valid || d.width != W || d.height != H || d.channels != refChannels)
+                    return {};
+                applyCalibration(d);
+                return StarFinder::detectStars(lumaOf(d), 60);
+            };
+
+            QHash<int, std::vector<StarPoint>> anchorStars;
+            for (int pid : panelList) anchorStars.insert(pid, starsOfFrame(panelAnchor.value(pid)));
+
+            // G[pid] maps the reference panel's anchor coords -> panel pid's anchor.
+            QHash<int, Transform> G;
+            Transform ident; ident.ok = true;
+            G.insert(refPanel, ident);
+
+            bool progressMade = true;
+            while (progressMade) {
+                progressMade = false;
+                for (int pid : panelList) {
+                    if (G.contains(pid)) continue;
+                    if (canceled()) { res.error = "Canceled."; return res; }
+                    progress(G.size(), panelList.size(), "Placing panels");
+                    for (int qid : panelList) {
+                        if (!G.contains(qid)) continue;
+                        const Transform Hqp = estimateTransform(anchorStars.value(qid), anchorStars.value(pid));
+                        if (!Hqp.ok) continue;
+                        G.insert(pid, composeT(Hqp, G.value(qid)));   // ref-anchor -> p-anchor
+                        progressMade = true;
+                        break;
+                    }
+                }
+            }
+
+            // Canvas bounds: map each placed panel's native corners back into the
+            // reference-panel coordinate system (which the canvas mirrors, offset).
+            double minX = 0.0, minY = 0.0, maxX = W, maxY = H;
+            QHash<int, Transform> Ginv;
+            for (int pid : panelList) {
+                if (!G.contains(pid)) continue;
+                Transform gi;
+                if (!invertT(G.value(pid), gi)) continue;
+                Ginv.insert(pid, gi);
+                const double cx[4] = { 0.0, (double)W, 0.0, (double)W };
+                const double cy[4] = { 0.0, 0.0, (double)H, (double)H };
+                for (int k = 0; k < 4; ++k) {
+                    const double rx = gi.a * cx[k] + gi.b * cy[k] + gi.tx;
+                    const double ry = gi.c * cx[k] + gi.d * cy[k] + gi.ty;
+                    minX = std::min(minX, rx); maxX = std::max(maxX, rx);
+                    minY = std::min(minY, ry); maxY = std::max(maxY, ry);
+                }
+            }
+            padX = -minX; padY = -minY;
+            Wc = (int)std::ceil(maxX - minX);
+            Hc = (int)std::ceil(maxY - minY);
+            if ((qint64)Wc * Hc > 120000000LL) {
+                res.error = "The mosaic canvas is too large to stack in memory.";
+                return res;
+            }
+
+            // transPad maps output (canvas) coords -> reference-panel coords.
+            Transform transPad; transPad.ok = true;
+            transPad.tx = -padX; transPad.ty = -padY;
+
+            int droppedPanels = 0;
+            for (int pid : panelList) if (!G.contains(pid)) ++droppedPanels;
+
+            for (int i = 0; i < frames.size(); ++i) {
+                if (canceled()) { res.error = "Canceled."; return res; }
+                progress(i, frames.size(), "Aligning");
+                const int pid = panels[i];
+                if (!G.contains(pid)) continue;             // unplaced panel: dropped
+
+                Transform within;                           // panel anchor -> this frame
+                if (i == panelAnchor.value(pid)) {
+                    within.ok = true;                       // the anchor maps to itself
+                } else {
+                    const std::vector<StarPoint> stars = starsOfFrame(i);
+                    within = estimateTransform(anchorStars.value(pid), stars);
+                    if (!within.ok) {
+                        const Offset o = matchOffset(anchorStars.value(pid), stars);
+                        if (o.ok) { within.ok = true; within.tx = o.dx; within.ty = o.dy; }
+                    }
+                    if (!within.ok) continue;
+                }
+                // output -> frame = within . G[pid] . transPad
+                F[i] = composeT(within, composeT(G.value(pid), transPad));
+            }
+
+            if (droppedPanels > 0)
+                res.warning = QString("%1 of %2 mosaic panels shared no stars with the others and were left out.")
+                                  .arg(droppedPanels).arg(panelList.size());
+
+            // Background matching: estimate each placed panel's per-channel sky
+            // background (the median of its anchor frame), match them all to the
+            // common median level, and carry that offset to every frame in the
+            // panel — so panels sitting at different sky levels blend seamlessly.
+            auto anchorBackground = [&](int fi) -> std::vector<double> {
+                std::vector<double> bg(C, 0.0);
+                FitsColorData d = FitsPixelReader::readColor(frames[fi], wantColor, fullRes);
+                if (!d.valid || d.width != W || d.height != H || d.channels != refChannels)
+                    return bg;
+                applyCalibration(d);
+                for (int ci = 0; ci < C; ++ci) {
+                    const std::vector<float> &pl = planeOf(d, sel[ci]);
+                    const size_t stride = std::max<size_t>(1, pl.size() / 50000);
+                    std::vector<float> s;
+                    s.reserve(pl.size() / stride + 1);
+                    for (size_t p = 0; p < pl.size(); p += stride) s.push_back(pl[p]);
+                    if (!s.empty()) {
+                        std::nth_element(s.begin(), s.begin() + s.size() / 2, s.end());
+                        bg[ci] = s[s.size() / 2];
+                    }
+                }
+                return bg;
+            };
+            QHash<int, std::vector<double>> panelBg;
+            for (int pid : panelList)
+                if (G.contains(pid)) panelBg.insert(pid, anchorBackground(panelAnchor.value(pid)));
+            if (panelBg.size() >= 2) {
+                std::vector<double> target(C, 0.0);
+                for (int ci = 0; ci < C; ++ci) {
+                    std::vector<double> levels;
+                    for (auto it = panelBg.constBegin(); it != panelBg.constEnd(); ++it)
+                        levels.push_back(it.value()[ci]);
+                    std::nth_element(levels.begin(), levels.begin() + levels.size() / 2, levels.end());
+                    target[ci] = levels[levels.size() / 2];
+                }
+                for (int i = 0; i < frames.size(); ++i) {
+                    const int pid = panels[i];
+                    if (!panelBg.contains(pid)) continue;
+                    const std::vector<double> &bg = panelBg[pid];
+                    for (int ci = 0; ci < C; ++ci)
+                        frameOffset[i][ci] = target[ci] - bg[ci];
+                }
+            }
         }
 
-        // Phase 2: accumulate per-channel mean (and variance, for sigma clipping).
-        std::vector<double> mean((size_t)C * N, 0.0);
-        std::vector<double> m2((size_t)C * N, 0.0);
-        std::vector<int>    cnt((size_t)N, 0);
+        // Phase 2: accumulate per-channel mean (and variance, for sigma clipping)
+        // over the output canvas, sampling each frame through its F[i] map.
+        const qint64 Nc = (qint64)Wc * Hc;
+        std::vector<double> mean((size_t)C * Nc, 0.0);
+        std::vector<double> m2((size_t)C * Nc, 0.0);
+        std::vector<int>    cnt((size_t)Nc, 0);
         int used = 0;
 
         for (int i = 0; i < frames.size(); ++i) {
             if (canceled()) { res.error = "Canceled."; return res; }
-            if (!xf[i].ok) continue;
+            if (!F[i].ok) continue;
             progress(i, frames.size(), sigmaClip ? "Measuring" : "Combining");
 
             FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor, fullRes);
@@ -603,11 +929,12 @@ void StackingService::integrate(const QStringList &paths,
             std::vector<const std::vector<float> *> src(C);
             for (int ci = 0; ci < C; ++ci) src[ci] = &planeOf(d, sel[ci]);
 
-            const Transform &t = xf[i];
+            const Transform &t = F[i];
+            const std::vector<double> &off = frameOffset[i];
             ++used;
 
-            for (int oy = 0; oy < H; ++oy) {
-                for (int ox = 0; ox < W; ++ox) {
+            for (int oy = 0; oy < Hc; ++oy) {
+                for (int ox = 0; ox < Wc; ++ox) {
                     const double sx = t.a * ox + t.b * oy + t.tx;
                     const double sy = t.c * ox + t.d * oy + t.ty;
                     const int x0 = (int)std::floor(sx), y0 = (int)std::floor(sy);
@@ -616,17 +943,17 @@ void StackingService::integrate(const QStringList &paths,
                     const double fx = sx - x0, fy = sy - y0;
                     const size_t b00 = (size_t)y0 * W + x0, b10 = (size_t)y0 * W + x1;
                     const size_t b01 = (size_t)y1 * W + x0, b11 = (size_t)y1 * W + x1;
-                    const qint64 p = (qint64)oy * W + ox;
+                    const qint64 p = (qint64)oy * Wc + ox;
                     const int n = ++cnt[(size_t)p];
                     for (int ci = 0; ci < C; ++ci) {
                         const std::vector<float> &pl = *src[ci];
                         const double top = pl[b00] + (pl[b10] - pl[b00]) * fx;
                         const double bot = pl[b01] + (pl[b11] - pl[b01]) * fx;
-                        const double v = top + (bot - top) * fy;
-                        double &mn = mean[(size_t)ci * N + p];
+                        const double v = top + (bot - top) * fy + off[ci];
+                        double &mn = mean[(size_t)ci * Nc + p];
                         const double delta = v - mn;
                         mn += delta / n;
-                        m2[(size_t)ci * N + p] += delta * (v - mn);
+                        m2[(size_t)ci * Nc + p] += delta * (v - mn);
                     }
                 }
             }
@@ -634,25 +961,26 @@ void StackingService::integrate(const QStringList &paths,
 
         if (used < 2) {
             res.error = align
-                ? "Fewer than two frames could be aligned to the reference."
+                ? (mosaicRun ? "Fewer than two frames could be placed into the mosaic."
+                             : "Fewer than two frames could be aligned to the reference.")
                 : "Fewer than two frames could be read.";
             return res;
         }
 
-        std::vector<float> out((size_t)C * N, 0.0f);
+        std::vector<float> out((size_t)C * Nc, 0.0f);
 
         if (!sigmaClip) {
-            for (size_t k = 0; k < (size_t)C * N; ++k)
+            for (size_t k = 0; k < (size_t)C * Nc; ++k)
                 out[k] = (float)mean[k];
         } else {
             // Phase 3: clipped mean, re-reading frames with their stored offsets.
             const double kappa = 3.0;
-            std::vector<double> clipSum((size_t)C * N, 0.0);
-            std::vector<int>    clipCnt((size_t)C * N, 0);
+            std::vector<double> clipSum((size_t)C * Nc, 0.0);
+            std::vector<int>    clipCnt((size_t)C * Nc, 0);
 
             for (int i = 0; i < frames.size(); ++i) {
                 if (canceled()) { res.error = "Canceled."; return res; }
-                if (!xf[i].ok) continue;
+                if (!F[i].ok) continue;
                 progress(i, frames.size(), "Combining");
 
                 FitsColorData d = FitsPixelReader::readColor(frames[i], wantColor, fullRes);
@@ -663,11 +991,12 @@ void StackingService::integrate(const QStringList &paths,
                 std::vector<const std::vector<float> *> src(C);
                 for (int ci = 0; ci < C; ++ci) src[ci] = &planeOf(d, sel[ci]);
 
-                const Transform &t = xf[i];
+                const Transform &t = F[i];
+                const std::vector<double> &off = frameOffset[i];
 
-                for (int oy = 0; oy < H; ++oy) {
-                    for (int ox = 0; ox < W; ++ox) {
-                        const qint64 p = (qint64)oy * W + ox;
+                for (int oy = 0; oy < Hc; ++oy) {
+                    for (int ox = 0; ox < Wc; ++ox) {
+                        const qint64 p = (qint64)oy * Wc + ox;
                         if (cnt[(size_t)p] < 2) continue;
                         const double sx = t.a * ox + t.b * oy + t.tx;
                         const double sy = t.c * ox + t.d * oy + t.ty;
@@ -681,8 +1010,8 @@ void StackingService::integrate(const QStringList &paths,
                             const std::vector<float> &pl = *src[ci];
                             const double top = pl[b00] + (pl[b10] - pl[b00]) * fx;
                             const double bot = pl[b01] + (pl[b11] - pl[b01]) * fx;
-                            const double v = top + (bot - top) * fy;
-                            const size_t cp = (size_t)ci * N + p;
+                            const double v = top + (bot - top) * fy + off[ci];
+                            const size_t cp = (size_t)ci * Nc + p;
                             const double sigma = std::sqrt(std::max(0.0, m2[cp] / cnt[(size_t)p]));
                             if (sigma <= 0.0 || std::abs(v - mean[cp]) <= kappa * sigma) {
                                 clipSum[cp] += v;
@@ -693,7 +1022,7 @@ void StackingService::integrate(const QStringList &paths,
                 }
             }
 
-            for (size_t k = 0; k < (size_t)C * N; ++k)
+            for (size_t k = 0; k < (size_t)C * Nc; ++k)
                 out[k] = clipCnt[k] > 0 ? (float)(clipSum[k] / clipCnt[k]) : (float)mean[k];
         }
 
@@ -701,12 +1030,16 @@ void StackingService::integrate(const QStringList &paths,
             // Grey-world white balance: equalise the per-channel medians (which
             // are dominated by sky background), neutralising the OSC green cast.
             auto channelMedian = [&](int ci) -> double {
-                const size_t base = (size_t)ci * N;
-                const size_t sampleN = std::min<size_t>((size_t)N, 100000);
-                const double step = (double)N / (double)sampleN;
-                std::vector<float> s(sampleN);
-                for (size_t i = 0; i < sampleN; ++i)
-                    s[i] = out[base + (size_t)(i * step)];
+                const size_t base = (size_t)ci * Nc;
+                const size_t sampleN = std::min<size_t>((size_t)Nc, 100000);
+                const double step = (double)Nc / (double)sampleN;
+                std::vector<float> s;
+                s.reserve(sampleN);
+                for (size_t i = 0; i < sampleN; ++i) {
+                    const float v = out[base + (size_t)(i * step)];
+                    if (v != 0.0f) s.push_back(v);      // skip canvas no-data padding
+                }
+                if (s.empty()) return 0.0;
                 std::nth_element(s.begin(), s.begin() + s.size() / 2, s.end());
                 return s[s.size() / 2];
             };
@@ -719,9 +1052,9 @@ void StackingService::integrate(const QStringList &paths,
                     std::clamp(target / m2med, 0.2, 5.0)
                 };
                 for (int ci = 0; ci < 3; ++ci) {
-                    const size_t base = (size_t)ci * N;
+                    const size_t base = (size_t)ci * Nc;
                     const float f = (float)sc[ci];
-                    for (qint64 p = 0; p < N; ++p)
+                    for (qint64 p = 0; p < Nc; ++p)
                         out[base + (size_t)p] *= f;
                 }
             }
@@ -741,10 +1074,11 @@ void StackingService::integrate(const QStringList &paths,
 
         const QString method = sigmaClip ? "sigma" : "avg";
         const QString calTag = calibrating ? "_cal" : "";
+        const QString mosaicTag = mosaicRun ? "_mosaic" : "";
         const QString outPath = outDir.absoluteFilePath(
-            QString("Stacked_%1_%2f_%3_%4%5.fit").arg(baseName).arg(used).arg(method).arg(modeTag).arg(calTag));
+            QString("Stacked_%1_%2f_%3_%4%5%6.fit").arg(baseName).arg(used).arg(method).arg(modeTag).arg(calTag).arg(mosaicTag));
 
-        if (!writeFloatFits(outPath, W, H, C, out, object, used)) {
+        if (!writeFloatFits(outPath, Wc, Hc, C, out, object, used)) {
             res.error = "Could not write the stacked FITS file.";
             return res;
         }

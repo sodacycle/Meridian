@@ -50,8 +50,11 @@ public:
                                const QString &combineMethod,
                                const QString &outputMode,
                                bool autoBalance,
-                               const QVariantMap &calibration);
+                               const QVariantMap &calibration,
+                               const QVariantList &panelIds = QVariantList(),
+                               bool mosaic = false);
     Q_INVOKABLE QStringList selectCalibrationFolder();
+    Q_INVOKABLE QVariantMap  autoMatchCalibration(const QStringList &lightPaths);
     Q_INVOKABLE void cancel();
 
 signals:
