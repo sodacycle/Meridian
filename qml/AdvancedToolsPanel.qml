@@ -14,7 +14,14 @@ Rectangle {
     property bool   jpgScanDone: false
     property int    jpgCount: 0
 
-    property string consoleLog: ""
+    // The console keeps a bounded rolling buffer and repaints on a throttle
+    // timer instead of re-laying-out an ever-growing Text on every message.
+    // Bulk operations (e.g. deleting thousands of JPGs) emit one line per file,
+    // which would otherwise freeze the UI thread with O(n^2) text relayout.
+    property var    consoleLines: []
+    readonly property int consoleMaxLines: 500
+    property string consoleDisplay: ""
+    property bool   consoleDirty: false
 
     signal jpgScanned(var rows)
     signal jpgCleared()
@@ -27,10 +34,29 @@ Rectangle {
     }
 
     function log(msg) {
-        consoleLog += (consoleLog !== "" ? "\n" : "") + msg
-        Qt.callLater(function() {
-            consoleFlick.contentY = Math.max(0, consoleFlick.contentHeight - consoleFlick.height)
-        })
+        var lines = root.consoleLines
+        lines.push(msg)
+        if (lines.length > root.consoleMaxLines)
+            lines.splice(0, lines.length - root.consoleMaxLines)
+        root.consoleDirty = true
+    }
+
+    function clearConsole() {
+        root.consoleLines = []
+        root.consoleDisplay = ""
+        root.consoleDirty = false
+    }
+
+    Timer {
+        interval: 120; repeat: true; running: true
+        onTriggered: {
+            if (!root.consoleDirty) return
+            root.consoleDirty = false
+            root.consoleDisplay = root.consoleLines.join("\n")
+            Qt.callLater(function() {
+                consoleFlick.contentY = Math.max(0, consoleFlick.contentHeight - consoleFlick.height)
+            })
+        }
     }
 
     Column {
@@ -199,7 +225,7 @@ Rectangle {
                         implicitHeight: 20; implicitWidth: 46
                         ToolTip.visible: hovered; ToolTip.delay: 500
                         ToolTip.text: "Clear the console log"
-                        onClicked: root.consoleLog = ""
+                        onClicked: root.clearConsole()
                     }
                 }
 
@@ -217,9 +243,9 @@ Rectangle {
                     Text {
                         id: consoleText
                         width: consoleFlick.width
-                        text: root.consoleLog !== "" ? root.consoleLog
-                                                     : "Ready — click an action to begin."
-                        color: root.consoleLog !== "" ? "#a8d8a8" : "#3a3f55"
+                        text: root.consoleDisplay !== "" ? root.consoleDisplay
+                                                         : "Ready — click an action to begin."
+                        color: root.consoleDisplay !== "" ? "#a8d8a8" : "#3a3f55"
                         font.pixelSize: 12; font.family: "monospace"
                         wrapMode: Text.WordWrap
                         lineHeight: 1.35
