@@ -21,12 +21,16 @@ Window {
     property real stretchA:    0.1
     property real stretchP:    99.0
     property int  denoiseRadius: 0
+    property real brightness:  0.0
+    property real contrast:    1.0
+    property real gamma:       1.0
+    property real saturation:  1.0
 
-    property real stretchMin: 0.01
-    property real stretchMax: 2.0
-    property real clipMin:    90.0
-    property real clipMax:    99.9
-    property int  denoiseMax: 5
+    property real stretchMin: appSettings.stretchMin
+    property real stretchMax: appSettings.stretchMax
+    property real clipMin:    appSettings.clipMin
+    property real clipMax:    appSettings.clipMax
+    property int  denoiseMax: appSettings.denoiseMax
 
     onStretchMinChanged: if (stretchA < stretchMin) stretchA = stretchMin
     onStretchMaxChanged: if (stretchA > stretchMax) stretchA = stretchMax
@@ -34,14 +38,35 @@ Window {
     onClipMaxChanged:    if (stretchP > clipMax) stretchP = clipMax
     onDenoiseMaxChanged: if (denoiseRadius > denoiseMax) denoiseRadius = denoiseMax
 
-    Settings {
-        category: "viewer"
-        property alias stretchMin: viewer.stretchMin
-        property alias stretchMax: viewer.stretchMax
-        property alias clipMin:    viewer.clipMin
-        property alias clipMax:    viewer.clipMax
-        property alias denoiseMax: viewer.denoiseMax
+    property bool restoringGeometry: false
+
+    Component.onCompleted: {
+        if (appSettings.rememberViewerGeometry
+                && appSettings.viewerWidth > 0 && appSettings.viewerHeight > 0) {
+            restoringGeometry = true
+            width  = appSettings.viewerWidth
+            height = appSettings.viewerHeight
+            if (appSettings.viewerX >= 0 && appSettings.viewerY >= 0) {
+                x = appSettings.viewerX
+                y = appSettings.viewerY
+            }
+            restoringGeometry = false
+        }
     }
+
+    function saveGeometry() {
+        if (restoringGeometry || !appSettings.rememberViewerGeometry || visibility === Window.Maximized)
+            return
+        appSettings.viewerX = x
+        appSettings.viewerY = y
+        appSettings.viewerWidth = width
+        appSettings.viewerHeight = height
+    }
+
+    onXChanged:      saveGeometry()
+    onYChanged:      saveGeometry()
+    onWidthChanged:  saveGeometry()
+    onHeightChanged: saveGeometry()
 
     property int activeSection: 0
     property var fitsFilePaths: []
@@ -408,13 +433,20 @@ Window {
                 width: 210
                 color: "#242424"
 
-                Column {
-                    id: controlsCol
+                ScrollView {
+                    id: controlsScroll
                     anchors.top: parent.top; anchors.topMargin: 14
                     anchors.left: parent.left; anchors.leftMargin: 10
                     anchors.right: parent.right; anchors.rightMargin: 10
-                    spacing: 4
+                    anchors.bottom: actionCol.top; anchors.bottomMargin: 10
+                    clip: true
                     visible: !viewer.isJpg
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                    Column {
+                    id: controlsCol
+                    width: controlsScroll.availableWidth
+                    spacing: 4
 
                     Item {
                         width: parent.width; height: 16
@@ -486,14 +518,114 @@ Window {
                         onMoved: viewer.denoiseRadius = Math.round(value)
                     }
 
+                    Item { width: 1; height: 6 }
+
+                    Item {
+                        width: parent.width; height: 16
+                        Text {
+                            anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                            text: "Brightness"; color: "#aaaaaa"; font.pixelSize: 11
+                            ToolTip.visible: brLbl.containsMouse; ToolTip.delay: 400
+                            ToolTip.text: "Shifts all tones lighter or darker after stretching.\n0 = unchanged."
+                            MouseArea { id: brLbl; anchors.fill: parent; hoverEnabled: true }
+                        }
+                        Text {
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            text: (viewer.brightness >= 0 ? "+" : "") + viewer.brightness.toFixed(2)
+                            color: "#ffffff"; font.pixelSize: 11; font.family: "monospace"
+                        }
+                    }
+                    Slider {
+                        width: parent.width
+                        from: -1.0; to: 1.0; stepSize: 0.01
+                        value: viewer.brightness
+                        onMoved: viewer.brightness = value
+                    }
+
+                    Item { width: 1; height: 6 }
+
+                    Item {
+                        width: parent.width; height: 16
+                        Text {
+                            anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                            text: "Contrast"; color: "#aaaaaa"; font.pixelSize: 11
+                            ToolTip.visible: coLbl.containsMouse; ToolTip.delay: 400
+                            ToolTip.text: "Expands or compresses tones around mid-grey.\n1.00 = unchanged."
+                            MouseArea { id: coLbl; anchors.fill: parent; hoverEnabled: true }
+                        }
+                        Text {
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            text: viewer.contrast.toFixed(2) + "×"
+                            color: "#ffffff"; font.pixelSize: 11; font.family: "monospace"
+                        }
+                    }
+                    Slider {
+                        width: parent.width
+                        from: 0.2; to: 2.5; stepSize: 0.01
+                        value: viewer.contrast
+                        onMoved: viewer.contrast = value
+                    }
+
+                    Item { width: 1; height: 6 }
+
+                    Item {
+                        width: parent.width; height: 16
+                        Text {
+                            anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                            text: "Gamma"; color: "#aaaaaa"; font.pixelSize: 11
+                            ToolTip.visible: gaLbl.containsMouse; ToolTip.delay: 400
+                            ToolTip.text: "Brightens or darkens the mid-tones only,\nleaving black and white fixed.  1.00 = unchanged."
+                            MouseArea { id: gaLbl; anchors.fill: parent; hoverEnabled: true }
+                        }
+                        Text {
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            text: viewer.gamma.toFixed(2)
+                            color: "#ffffff"; font.pixelSize: 11; font.family: "monospace"
+                        }
+                    }
+                    Slider {
+                        width: parent.width
+                        from: 0.2; to: 3.0; stepSize: 0.01
+                        value: viewer.gamma
+                        onMoved: viewer.gamma = value
+                    }
+
+                    Item { width: 1; height: 6 }
+
+                    Item {
+                        width: parent.width; height: 16
+                        Text {
+                            anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                            text: "Saturation"; color: "#aaaaaa"; font.pixelSize: 11
+                            ToolTip.visible: saturLbl.containsMouse; ToolTip.delay: 400
+                            ToolTip.text: "Colour intensity (colour images only).\n0 = greyscale, 1.00 = unchanged."
+                            MouseArea { id: saturLbl; anchors.fill: parent; hoverEnabled: true }
+                        }
+                        Text {
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            text: viewer.saturation.toFixed(2) + "×"
+                            color: "#ffffff"; font.pixelSize: 11; font.family: "monospace"
+                        }
+                    }
+                    Slider {
+                        width: parent.width
+                        from: 0.0; to: 2.0; stepSize: 0.01
+                        value: viewer.saturation
+                        onMoved: viewer.saturation = value
+                    }
+
                     Item { width: 1; height: 10 }
 
                     Button {
                         width: parent.width; implicitHeight: 28
                         text: "Reset"
                         ToolTip.visible: hovered; ToolTip.delay: 400
-                        ToolTip.text: "Reset to defaults: a=0.10, clip=99.0%, denoise=off"
-                        onClicked: { viewer.stretchA = 0.1; viewer.stretchP = 99.0; viewer.denoiseRadius = 0 }
+                        ToolTip.text: "Reset all adjustments to defaults."
+                        onClicked: {
+                            viewer.stretchA = 0.1; viewer.stretchP = 99.0; viewer.denoiseRadius = 0
+                            viewer.brightness = 0.0; viewer.contrast = 1.0
+                            viewer.gamma = 1.0; viewer.saturation = 1.0
+                        }
                     }
 
                     Item { width: 1; height: 6 }
@@ -505,9 +637,11 @@ Window {
                         wrapMode: Text.WordWrap
                         lineHeight: 1.3
                     }
+                    }
                 }
 
                 Column {
+                    id: actionCol
                     anchors.bottom: parent.bottom; anchors.bottomMargin: 12
                     anchors.left: parent.left; anchors.leftMargin: 10
                     anchors.right: parent.right; anchors.rightMargin: 10
@@ -593,6 +727,10 @@ Window {
                                       + "?a=" + viewer.stretchA.toFixed(3)
                                       + "&p=" + viewer.stretchP.toFixed(2)
                                       + "&d=" + viewer.denoiseRadius
+                                      + "&b=" + viewer.brightness.toFixed(3)
+                                      + "&c=" + viewer.contrast.toFixed(3)
+                                      + "&g=" + viewer.gamma.toFixed(3)
+                                      + "&s=" + viewer.saturation.toFixed(3)
                                     : ""
 
                             onStatusChanged: {
@@ -792,6 +930,10 @@ Window {
             stretchA:      viewer.stretchA
             stretchP:      viewer.stretchP
             denoiseRadius: viewer.denoiseRadius
+            brightness:    viewer.brightness
+            contrast:      viewer.contrast
+            gamma:         viewer.gamma
+            saturation:    viewer.saturation
             onRejectionsApplied: function(paths) { viewer.rejectionsApplied(paths) }
             onUnrejectionsApplied: function(paths) { viewer.unrejectionsApplied(paths) }
         }
@@ -816,11 +958,16 @@ Window {
             onOpenResultRequested: function(path) { viewer.openFile(path) }
         }
 
-        SettingsView {
+        ScrollView {
+            id: settingsScroll
             anchors.fill: parent
             visible: viewer.activeSection === 4
-            viewer:  viewer
-            culling: cullingSection
+            clip: true
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+            SettingsView {
+                width: settingsScroll.availableWidth
+            }
         }
     }
 

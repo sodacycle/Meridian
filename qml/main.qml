@@ -19,6 +19,7 @@ ApplicationWindow {
     property bool   scanCompleted:     false
 
     property string seestarAutoAddedPath: ""
+    property bool   seestarImportPrompted: false
     property bool   showObservedSkyPaths:  true
 
     menuBar: MenuBar {
@@ -84,6 +85,17 @@ ApplicationWindow {
                 property string tip: "Cancel the current scan or file operation, keeping any results so far."
                 enabled: scanner.running || organizer.running
                 onTriggered: { scanner.cancel(); organizer.cancel() }
+            }
+            MenuSeparator {}
+            Action {
+                text: "Preferences…"
+                shortcut: "Ctrl+,"
+                property string tip: "Open Meridian's settings: application behaviour and Image Viewer defaults."
+                onTriggered: {
+                    appSettingsWindow.show()
+                    appSettingsWindow.raise()
+                    appSettingsWindow.requestActivate()
+                }
             }
             MenuSeparator {}
             Action {
@@ -263,13 +275,13 @@ ApplicationWindow {
                 text: "Reject Selected File"
                 property string tip: "Move the selected file to the rejected folder."
                 enabled: fileDetailsView.selectedFilePath !== ""
-                onTriggered: menuRejectFileDialog.open()
+                onTriggered: if (appSettings.confirmRejectDelete) menuRejectFileDialog.open(); else window.rejectSelectedFile()
             }
             Action {
                 text: "Delete Selected File…"
                 property string tip: "Move the selected file to the Trash."
                 enabled: fileDetailsView.selectedFilePath !== ""
-                onTriggered: menuDeleteFileDialog.open()
+                onTriggered: if (appSettings.confirmRejectDelete) menuDeleteFileDialog.open(); else window.deleteSelectedFile()
             }
         }
 
@@ -277,6 +289,17 @@ ApplicationWindow {
             title: "&Help"
             delegate: TipMenuItem {}
 
+            Action {
+                text: "Meridian Help…"
+                shortcut: "F1"
+                property string tip: "Open the help guide: how each Meridian feature works."
+                onTriggered: {
+                    helpWindow.show()
+                    helpWindow.raise()
+                    helpWindow.requestActivate()
+                }
+            }
+            MenuSeparator {}
             Action {
                 text: "About Meridian…"
                 property string tip: "Show version and project information."
@@ -311,15 +334,7 @@ ApplicationWindow {
             }
         }
 
-        onAccepted: {
-            var path = fileDetailsView.selectedFilePath
-            var newPath = organizer.rejectFile(path)
-            if (newPath !== "") {
-                fileDetailsView.removeRow(path)
-                fileDetailsView.selectedFilePath = ""
-                fileDetailsView.selectedFileName  = ""
-            }
-        }
+        onAccepted: window.rejectSelectedFile()
     }
 
     Dialog {
@@ -350,14 +365,7 @@ ApplicationWindow {
             }
         }
 
-        onAccepted: {
-            var path = fileDetailsView.selectedFilePath
-            if (organizer.deleteFile(path)) {
-                fileDetailsView.removeRow(path)
-                fileDetailsView.selectedFilePath = ""
-                fileDetailsView.selectedFileName  = ""
-            }
-        }
+        onAccepted: window.deleteSelectedFile()
     }
 
     Dialog {
@@ -565,7 +573,8 @@ ApplicationWindow {
                     imagingCalendar.buildCalendar(window.fullMetadataList)
                 }
                 onFileOpenRequested: function(path, name) {
-                    viewerManager.openFile(path)
+                    if (appSettings.launchViewerOnSelect)
+                        viewerManager.openFile(path)
                 }
             }
         }
@@ -586,6 +595,37 @@ ApplicationWindow {
         transientParent:    window
         displayRows:        window.fullMetadataList
         onRemoveRowRequested: function(path) { fileDetailsView.removeRow(path) }
+    }
+
+    AppSettingsWindow {
+        id: appSettingsWindow
+        visible: false
+    }
+
+    HelpWindow {
+        id: helpWindow
+        visible: false
+    }
+
+    function rejectSelectedFile() {
+        var path = fileDetailsView.selectedFilePath
+        if (path === "") return
+        var newPath = organizer.rejectFile(path)
+        if (newPath !== "") {
+            fileDetailsView.removeRow(path)
+            fileDetailsView.selectedFilePath = ""
+            fileDetailsView.selectedFileName  = ""
+        }
+    }
+
+    function deleteSelectedFile() {
+        var path = fileDetailsView.selectedFilePath
+        if (path === "") return
+        if (organizer.deleteFile(path)) {
+            fileDetailsView.removeRow(path)
+            fileDetailsView.selectedFilePath = ""
+            fileDetailsView.selectedFileName  = ""
+        }
     }
 
     function addSeestarDirIfPresent() {
@@ -858,11 +898,114 @@ ApplicationWindow {
                     scanner.addDirectory(myWorksPath)
                     window.seestarAutoAddedPath = myWorksPath
                 }
+                if (appSettings.seestarAutoImport && appSettings.astroFolder !== ""
+                        && !window.seestarImportPrompted && !seestarService.importing) {
+                    window.seestarImportPrompted = true
+                    seestarImportDialog.open()
+                }
             } else {
                 var idx = scanner.directories.indexOf(window.seestarAutoAddedPath)
                 if (idx !== -1)
                     scanner.removeDirectory(idx)
                 window.seestarAutoAddedPath = ""
+                window.seestarImportPrompted = false
+            }
+        }
+        function onImportFinished(copied, skipped, cancelled, error) {
+            seestarImportProgressDialog.close()
+            if (error !== "") {
+                seestarImportResultDialog.title = "Import Failed"
+                seestarImportResultText.text = error
+            } else if (cancelled) {
+                seestarImportResultDialog.title = "Import Cancelled"
+                seestarImportResultText.text = "Copied " + copied + " file" + (copied !== 1 ? "s" : "")
+                    + " before cancelling" + (skipped > 0 ? (" (" + skipped + " already present)") : "") + "."
+            } else {
+                seestarImportResultDialog.title = "Import Complete"
+                seestarImportResultText.text = "Copied " + copied + " new file" + (copied !== 1 ? "s" : "")
+                    + " into " + appSettings.astroFolder
+                    + (skipped > 0 ? (". Skipped " + skipped + " already present") : "") + "."
+            }
+            seestarImportResultDialog.open()
+        }
+    }
+
+    Dialog {
+        id: seestarImportDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: "Import Seestar Files"
+        standardButtons: Dialog.Yes | Dialog.No
+
+        Column {
+            spacing: 10; width: 440
+            Text {
+                width: parent.width; wrapMode: Text.WordWrap
+                text: "A Seestar is connected. Import the contents of its MyWorks folder into your default astrophotography folder?"
+                color: window.sysPal.windowText; font.pixelSize: 13
+            }
+            Text {
+                width: parent.width; wrapMode: Text.WrapAnywhere
+                text: "From:  " + seestarService.mountPath + "/MyWorks\nTo:  " + appSettings.astroFolder
+                color: window.sysPal.placeholderText; font.pixelSize: 11
+            }
+            Text {
+                width: parent.width; wrapMode: Text.WordWrap
+                text: "Files already in your folder are skipped, so this is safe to run more than once."
+                color: window.sysPal.windowText; opacity: 0.8; font.pixelSize: 12
+            }
+        }
+
+        onAccepted: {
+            seestarService.importMyWorks(appSettings.astroFolder)
+            seestarImportProgressDialog.open()
+        }
+    }
+
+    Dialog {
+        id: seestarImportProgressDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        closePolicy: Popup.NoAutoClose
+        title: "Importing Seestar Files"
+        standardButtons: Dialog.Cancel
+
+        Column {
+            spacing: 12; width: 400
+            Text {
+                width: parent.width; wrapMode: Text.WordWrap
+                color: window.sysPal.windowText; font.pixelSize: 13
+                text: seestarService.importTotal > 0
+                      ? ("Copying " + seestarService.importDone + " of " + seestarService.importTotal + " files…")
+                      : "Scanning Seestar files…"
+            }
+            ProgressBar {
+                width: parent.width
+                from: 0; to: Math.max(1, seestarService.importTotal)
+                value: seestarService.importDone
+                indeterminate: seestarService.importTotal === 0
+            }
+        }
+
+        onRejected: seestarService.cancelImport()
+    }
+
+    Dialog {
+        id: seestarImportResultDialog
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        modal: true
+        title: "Import Complete"
+        standardButtons: Dialog.Ok
+
+        Column {
+            spacing: 8; width: 420
+            Text {
+                id: seestarImportResultText
+                width: parent.width; wrapMode: Text.WordWrap
+                color: window.sysPal.windowText; font.pixelSize: 13
             }
         }
     }

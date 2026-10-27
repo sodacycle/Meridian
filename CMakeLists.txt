@@ -58,6 +58,7 @@ qt_add_executable(Meridian WIN32
     src/seestarservice.h          src/seestarservice.cpp
     src/exportservice.h           src/exportservice.cpp
     src/sessionstore.h            src/sessionstore.cpp
+    src/appsettings.h             src/appsettings.cpp
 )
 
 qt_add_qml_module(Meridian
@@ -78,6 +79,8 @@ qt_add_qml_module(Meridian
         qml/StackingView.qml
         qml/FileListView.qml
         qml/SettingsView.qml
+        qml/AppSettingsWindow.qml
+        qml/HelpWindow.qml
         qml/PlaceholderSection.qml
         qml/AboutDialog.qml
         qml/AutoSortWindow.qml

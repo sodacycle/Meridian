@@ -102,6 +102,56 @@ static void applyBoxBlur(QImage& img, int r)
     }
 }
 
+static void applyToneAdjust(QImage& img, double brightness, double contrast,
+                            double gamma, double saturation)
+{
+    if (img.isNull()) return;
+
+    const bool identityTone = (std::abs(brightness)     < 1e-6
+                            && std::abs(contrast - 1.0)  < 1e-6
+                            && std::abs(gamma - 1.0)     < 1e-6);
+    const bool isRGB        = (img.format() == QImage::Format_RGB32);
+    const bool identitySat  = (!isRGB || std::abs(saturation - 1.0) < 1e-6);
+    if (identityTone && identitySat) return;
+
+    uchar lut[256];
+    const double invG = 1.0 / gamma;
+    for (int i = 0; i < 256; ++i) {
+        double n = i / 255.0;
+        if (gamma != 1.0) n = std::pow(n, invG);
+        n = (n - 0.5) * contrast + 0.5 + brightness;
+        n = std::max(0.0, std::min(1.0, n));
+        lut[i] = static_cast<uchar>(n * 255.0 + 0.5);
+    }
+
+    const int W = img.width(), H = img.height();
+    if (isRGB) {
+        const auto clamp8 = [](double v) -> int {
+            return static_cast<int>(std::max(0.0, std::min(255.0, v)) + 0.5);
+        };
+        for (int y = 0; y < H; ++y) {
+            QRgb* row = reinterpret_cast<QRgb*>(img.scanLine(y));
+            for (int x = 0; x < W; ++x) {
+                int r = lut[qRed(row[x])];
+                int g = lut[qGreen(row[x])];
+                int b = lut[qBlue(row[x])];
+                if (!identitySat) {
+                    const double lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                    r = clamp8(lum + (r - lum) * saturation);
+                    g = clamp8(lum + (g - lum) * saturation);
+                    b = clamp8(lum + (b - lum) * saturation);
+                }
+                row[x] = qRgb(r, g, b);
+            }
+        }
+    } else {
+        for (int y = 0; y < H; ++y) {
+            uchar* row = img.scanLine(y);
+            for (int x = 0; x < W; ++x) row[x] = lut[row[x]];
+        }
+    }
+}
+
 QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSize &requestedSize)
 {
     const int qmark = id.indexOf('?');
@@ -110,15 +160,20 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
 
     double stretchA = 0.1, stretchP = 99.0;
     int    denoiseR = 0;
+    double brightness = 0.0, contrast = 1.0, gamma = 1.0, saturation = 1.0;
     if (qmark >= 0) {
         for (const auto& part : id.mid(qmark + 1).split('&')) {
             const int eq = part.indexOf('=');
             if (eq < 0) continue;
             const double val = part.mid(eq + 1).toDouble();
             const QString key = part.left(eq);
-            if      (key == "a") stretchA = qBound(0.001, val, 10.0);
-            else if (key == "p") stretchP = qBound(50.0,  val, 99.99);
-            else if (key == "d") denoiseR = qBound(0, static_cast<int>(val), 10);
+            if      (key == "a") stretchA   = qBound(0.001, val, 10.0);
+            else if (key == "p") stretchP   = qBound(50.0,  val, 99.99);
+            else if (key == "d") denoiseR   = qBound(0, static_cast<int>(val), 10);
+            else if (key == "b") brightness = qBound(-1.0, val, 1.0);
+            else if (key == "c") contrast   = qBound(0.1,  val, 4.0);
+            else if (key == "g") gamma      = qBound(0.1,  val, 5.0);
+            else if (key == "s") saturation = qBound(0.0,  val, 3.0);
         }
     }
 
@@ -233,9 +288,16 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
     const int kSampleN = std::min((int)ppPlane, 100000);
     const auto samplePlane = [&](qint64 off) -> std::vector<float> {
         const float step = (float)ppPlane / kSampleN;
-        std::vector<float> s(kSampleN);
-        for (int i = 0; i < kSampleN; ++i)
-            s[i] = px(off + (qint64)(i * step));
+        std::vector<float> s;
+        s.reserve(kSampleN);
+        for (int i = 0; i < kSampleN; ++i) {
+            const float v = px(off + (qint64)(i * step));
+            if (v != 0.0f) s.push_back(v);   // skip no-data (e.g. mosaic canvas padding)
+        }
+        if (s.empty()) {                     // all no-data — fall back to raw samples
+            for (int i = 0; i < kSampleN; ++i)
+                s.push_back(px(off + (qint64)(i * step)));
+        }
         std::sort(s.begin(), s.end());
         return s;
     };
@@ -384,6 +446,7 @@ QImage FitsImageProvider::requestImage(const QString &id, QSize *size, const QSi
     }
 
     applyBoxBlur(image, denoiseR);
+    applyToneAdjust(image, brightness, contrast, gamma, saturation);
 
     if (size)
         *size = image.size();

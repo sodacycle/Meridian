@@ -7,12 +7,6 @@ Item {
 
     Settings {
         category: "culling"
-        property alias sensitivity:      culling.sensitivity
-        property alias metricStarCount:  culling.mStarcount
-        property alias metricBrightness: culling.mBrightness
-        property alias metricFwhm:       culling.mFwhm
-        property alias metricEcc:        culling.mEccentricity
-        property alias metricNoise:      culling.mNoise
         property alias custStarOk:       culling.custStarOk
         property alias custStarReject:   culling.custStarReject
         property alias custBrightOk:     culling.custBrightOk
@@ -134,11 +128,17 @@ Item {
     property real stretchA: 0.1
     property real stretchP: 99.0
     property int  denoiseRadius: 0
+    property real brightness: 0.0
+    property real contrast:   1.0
+    property real gamma:      1.0
+    property real saturation: 1.0
 
     function imgSource(path) {
         if (!path || path === "") return ""
         return "image://fitsprovider/" + encodeURIComponent(path)
                + "?a=" + stretchA.toFixed(3) + "&p=" + stretchP.toFixed(2) + "&d=" + denoiseRadius
+               + "&b=" + brightness.toFixed(3) + "&c=" + contrast.toFixed(3)
+               + "&g=" + gamma.toFixed(3) + "&s=" + saturation.toFixed(3)
     }
 
     property string sensitivity: "balanced"
@@ -147,6 +147,23 @@ Item {
     property bool mFwhm:         true
     property bool mEccentricity: true
     property bool mNoise:        true
+
+    // These mirror the app-wide Auto-Sort defaults so edits made here or in the
+    // Preferences window stay in sync. The Binding keeps the local value tracking
+    // appSettings even after the Culling screen assigns to it imperatively.
+    Binding { target: culling; property: "sensitivity";  value: appSettings.cullSensitivity }
+    Binding { target: culling; property: "mStarcount";   value: appSettings.cullStarCount }
+    Binding { target: culling; property: "mBrightness";  value: appSettings.cullBrightness }
+    Binding { target: culling; property: "mFwhm";        value: appSettings.cullFwhm }
+    Binding { target: culling; property: "mEccentricity";value: appSettings.cullEcc }
+    Binding { target: culling; property: "mNoise";       value: appSettings.cullNoise }
+
+    onSensitivityChanged:  if (appSettings.cullSensitivity !== sensitivity) appSettings.cullSensitivity = sensitivity
+    onMStarcountChanged:   if (appSettings.cullStarCount  !== mStarcount)   appSettings.cullStarCount  = mStarcount
+    onMBrightnessChanged:  if (appSettings.cullBrightness !== mBrightness)  appSettings.cullBrightness = mBrightness
+    onMFwhmChanged:        if (appSettings.cullFwhm       !== mFwhm)        appSettings.cullFwhm       = mFwhm
+    onMEccentricityChanged:if (appSettings.cullEcc        !== mEccentricity)appSettings.cullEcc        = mEccentricity
+    onMNoiseChanged:       if (appSettings.cullNoise      !== mNoise)       appSettings.cullNoise      = mNoise
 
     property bool hasApplied: false
     property int  appliedCount: 0

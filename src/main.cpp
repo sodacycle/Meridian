@@ -23,6 +23,7 @@
 #include "seestarservice.h"
 #include "exportservice.h"
 #include "sessionstore.h"
+#include "appsettings.h"
 
 int main(int argc, char *argv[])
 {
@@ -58,6 +59,7 @@ int main(int argc, char *argv[])
     StackingService         stackingService;
     ExportService           exportService;
     SessionStore            sessionStore;
+    AppSettings             appSettings;
 
     sessionStore.open();
     scanner.setSessionStore(&sessionStore);
@@ -91,6 +93,7 @@ int main(int argc, char *argv[])
     ctx->setContextProperty("stackingService",         &stackingService);
     ctx->setContextProperty("exportService",           &exportService);
     ctx->setContextProperty("sessionStore",            &sessionStore);
+    ctx->setContextProperty("appSettings",             &appSettings);
 
     static const QStringList columns = {
         "Frame Type", "File", "Target", "Start Time UTC", "End Time UTC",
